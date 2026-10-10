@@ -80,7 +80,7 @@ function rows(t: Dict, place: Place): { icon: ReactNode; label: string; value: s
 }
 
 export function PlaceDetail({ place, distance }: { place: Place; distance: string | null }) {
-  const { t } = usePrefs()
+  const { t, profile } = usePrefs()
   const [copied, setCopied] = useState(false)
   const stale = place.lastCheckedAt !== null && daysSince(place.lastCheckedAt) > STALE_DAYS
 
@@ -114,6 +114,10 @@ export function PlaceDetail({ place, distance }: { place: Place; distance: strin
           place.features && <span className="pending">{t.place.notVerified}</span>
         )}
       </div>
+
+      {profile !== 'wheelchair' && place.features && (
+        <p className="detail__profile">{t.profile[profile]}. {t.profile.note}</p>
+      )}
 
       {place.lastCheckedAt && (
         <p className={`detail__date${stale ? ' is-stale' : ''}`}>

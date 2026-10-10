@@ -2,6 +2,8 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import { en } from '../i18n/en'
 import { kk } from '../i18n/kk'
 import { ru, type Dict } from '../i18n/ru'
+import { PROFILES, type Profile } from './profiles'
+import { URL_LANG } from './telegram'
 
 export type Lang = 'kk' | 'ru' | 'en'
 type Theme = 'light' | 'dark'
@@ -13,14 +15,19 @@ interface Stored {
   lang?: Lang
   theme?: Theme
   largeText?: boolean
+  profile?: Profile
 }
 
 function read(): Stored {
+  let stored: Stored = {}
   try {
-    return JSON.parse(localStorage.getItem(KEY) || '{}')
+    stored = JSON.parse(localStorage.getItem(KEY) || '{}')
   } catch {
-    return {}
+    /* хранилище недоступно */
   }
+  // Бот открывает измеритель со своим языком: ?lang=kk
+  if (URL_LANG && URL_LANG in DICTS) stored.lang = URL_LANG as Lang
+  return stored
 }
 
 function browserLang(): Lang {
@@ -36,6 +43,9 @@ interface Prefs {
   toggleTheme: () => void
   largeText: boolean
   toggleLargeText: () => void
+  /** Как человек передвигается — от этого зависят цвета знаков на карте */
+  profile: Profile
+  setProfile: (p: Profile) => void
 }
 
 const Ctx = createContext<Prefs | null>(null)
@@ -54,6 +64,7 @@ export function PrefsProvider({ children }: { children: ReactNode }) {
   const lang = stored.lang ?? browserLang()
   const theme: Theme = stored.theme ?? (systemDark ? 'dark' : 'light')
   const largeText = !!stored.largeText
+  const profile: Profile = PROFILES.includes(stored.profile!) ? stored.profile! : 'wheelchair'
 
   useEffect(() => {
     const root = document.documentElement
@@ -79,8 +90,10 @@ export function PrefsProvider({ children }: { children: ReactNode }) {
       setLang: (l) => setStored((s) => ({ ...s, lang: l })),
       toggleTheme: () => setStored((s) => ({ ...s, theme: theme === 'dark' ? 'light' : 'dark' })),
       toggleLargeText: () => setStored((s) => ({ ...s, largeText: !s.largeText })),
+      profile,
+      setProfile: (p) => setStored((s) => ({ ...s, profile: p })),
     }),
-    [lang, theme, largeText],
+    [lang, theme, largeText, profile],
   )
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>

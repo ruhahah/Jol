@@ -10,12 +10,20 @@ export const SHYMKENT: [number, number] = [42.3265, 69.5965]
 
 export async function loadPlaces(): Promise<Place[]> {
   if (IS_DEMO) return demoPlaces()
-  // Представление places_public создаётся в db/public_api.sql
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/places_public?select=*`, {
-    headers: { apikey: SUPABASE_KEY!, Authorization: `Bearer ${SUPABASE_KEY}` },
-  })
-  if (!res.ok) throw new Error(`Supabase ${res.status}`)
-  const rows: Record<string, any>[] = await res.json()
+  // Представление places_public создаётся в db/public_api.sql.
+  // Supabase отдаёт не больше 1000 строк за запрос, поэтому читаем страницами.
+  const PAGE = 1000
+  const rows: Record<string, any>[] = []
+  for (let offset = 0; ; offset += PAGE) {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/places_public?select=*&order=id&limit=${PAGE}&offset=${offset}`,
+      { headers: { apikey: SUPABASE_KEY!, Authorization: `Bearer ${SUPABASE_KEY}` } },
+    )
+    if (!res.ok) throw new Error(`Supabase ${res.status}`)
+    const page: Record<string, any>[] = await res.json()
+    rows.push(...page)
+    if (page.length < PAGE) break
+  }
   return rows.map((r) => ({
     id: r.id,
     name: r.name,

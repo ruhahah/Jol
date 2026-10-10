@@ -98,6 +98,57 @@
   color: var(--brand-ink);
 }
 
+.profile {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.profile__title {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.profile__seg {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3px;
+  padding: 3px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.profile__seg button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-height: 2.4rem;
+  padding: 0 0.3rem;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 0.86rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.profile__seg button[aria-pressed='true'] {
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-1);
+}
+
+.list__more {
+  margin-top: 0.9rem;
+  color: var(--muted);
+  font-size: 0.88rem;
+  text-align: center;
+}
+
 .statuses {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -359,6 +410,12 @@
 .pending {
   color: var(--muted);
   font-weight: 500;
+}
+
+.detail__profile {
+  margin-top: 0.7rem;
+  color: var(--ink-2);
+  font-size: 0.9rem;
 }
 
 .detail__date {
@@ -641,6 +698,37 @@
   stroke-linejoin: round;
 }
 
+/* Группа знаков: кольцо показывает доли статусов, в центре — сколько мест внутри */
+.cluster {
+  display: grid !important;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 0 0 2px var(--surface), 0 2px 8px rgb(0 0 0 / 0.35);
+  transition: transform 0.15s;
+}
+
+.cluster:hover {
+  transform: scale(1.1);
+}
+
+.cluster__ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  /* вырезаем середину, оставляя кольцо */
+  mask: radial-gradient(circle, transparent 58%, #000 60%);
+}
+
+.cluster__n {
+  position: relative;
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+}
+
 .leaflet-container a {
   color: var(--brand);
 }
@@ -728,6 +816,7 @@
 
   /* В свёрнутой шторке видны только поиск и категории */
   .mapapp:not(.is-open) .statuses,
+  .mapapp:not(.is-open) .profile,
   .mapapp:not(.is-open) .switch,
   .mapapp:not(.is-open) .panel__scroll {
     display: none;

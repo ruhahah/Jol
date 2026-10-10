@@ -1,15 +1,16 @@
 import {
-  BadgeCheck, ChevronDown, ChevronUp, Coffee, GraduationCap, Landmark, LocateFixed, MapPin, Pill,
-  Search, Send, ShoppingBag, Stethoscope, X, type LucideIcon,
+  Accessibility, Baby, BadgeCheck, ChevronDown, ChevronUp, Coffee, Footprints, GraduationCap, Landmark,
+  LocateFixed, MapPin, Pill, Search, Send, ShoppingBag, Stethoscope, X, type LucideIcon,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { MapView } from '../components/MapView'
+import { MapView, type MapBounds } from '../components/MapView'
 import { ago, PlaceDetail } from '../components/PlaceDetail'
 import { StatusGlyph } from '../components/StatusGlyph'
 import { BOT_USERNAME, IS_DEMO } from '../lib/data'
 import { distanceM } from '../lib/geo'
 import { usePlaces } from '../lib/places'
 import { usePrefs } from '../lib/prefs'
+import { PROFILES, statusFor, type Profile } from '../lib/profiles'
 import { navigate } from '../lib/router'
 import { CATEGORIES, STATUSES, type Category, type Place, type Status } from '../lib/types'
 import '../styles/map.css'
@@ -24,11 +25,20 @@ const CATEGORY_ICON: Record<Category, LucideIcon> = {
   other: MapPin,
 }
 
+const PROFILE_ICON: Record<Profile, LucideIcon> = {
+  wheelchair: Accessibility,
+  stroller: Baby,
+  walker: Footprints,
+}
+
 const STATUS_RANK: Record<Status, number> = { accessible: 0, partial: 1, inaccessible: 2, unknown: 3 }
 
+/** Сколько строк списка рисуем за раз: мест тысячи, а читать больше экрана-двух никто не будет */
+const LIST_LIMIT = 60
+
 export function MapPage({ placeId }: { placeId: number | null }) {
-  const { t } = usePrefs()
-  const { places, loading, error } = usePlaces()
+  const { t, profile, setProfile } = usePrefs()
+  const { places: rawPlaces, loading, error } = usePlaces()
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<Category | 'all'>('all')
   const [only, setOnly] = useState<Set<Status>>(new Set()) // пусто = показывать все статусы
@@ -37,6 +47,13 @@ export function MapPage({ placeId }: { placeId: number | null }) {
   const [locating, setLocating] = useState(false)
   const [locError, setLocError] = useState(false)
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [bounds, setBounds] = useState<MapBounds | null>(null)
+
+  // Статус каждого места — с точки зрения выбранного способа передвижения
+  const places = useMemo(
+    () => (profile === 'wheelchair' ? rawPlaces : rawPlaces.map((p) => ({ ...p, status: statusFor(p, profile) }))),
+    [rawPlaces, profile],
+  )
 
   const selected = places.find((p) => p.id === placeId) ?? null
 
@@ -57,22 +74,34 @@ export function MapPage({ placeId }: { placeId: number | null }) {
     )
   }, [places, query, category, verifiedOnly])
 
-  const visible = useMemo(() => {
-    const list = base.filter((p) => only.size === 0 || only.has(p.status))
-    return list.sort((a, b) =>
-      userPos
-        ? distanceM(userPos, [a.lat, a.lon]) - distanceM(userPos, [b.lat, b.lon])
-        : STATUS_RANK[a.status] - STATUS_RANK[b.status] ||
-          Number(b.isVerified) - Number(a.isVerified) ||
-          a.name.localeCompare(b.name),
-    )
-  }, [base, only, userPos])
+  const counts = useMemo(() => {
+    const result: Record<Status, number> = { accessible: 0, partial: 0, inaccessible: 0, unknown: 0 }
+    for (const p of base) result[p.status]++
+    return result
+  }, [base])
+
+  const visible = useMemo(() => base.filter((p) => only.size === 0 || only.has(p.status)), [base, only])
 
   // Выбранное место остаётся на карте, даже если фильтры его скрыли
   const onMap = useMemo(
     () => (selected && !visible.includes(selected) ? [...visible, selected] : visible),
     [visible, selected],
   )
+
+  // В списке — только то, что сейчас видно на карте
+  const inView = useMemo(() => {
+    const list = bounds
+      ? visible.filter((p) => p.lat >= bounds.south && p.lat <= bounds.north &&
+                              p.lon >= bounds.west && p.lon <= bounds.east)
+      : visible
+    return [...list].sort((a, b) =>
+      userPos
+        ? distanceM(userPos, [a.lat, a.lon]) - distanceM(userPos, [b.lat, b.lon])
+        : STATUS_RANK[a.status] - STATUS_RANK[b.status] ||
+          Number(b.isVerified) - Number(a.isVerified) ||
+          a.name.localeCompare(b.name),
+    )
+  }, [visible, bounds, userPos])
 
   const filtered = query !== '' || category !== 'all' || only.size > 0 || verifiedOnly
   const reset = () => {
@@ -114,7 +143,7 @@ export function MapPage({ placeId }: { placeId: number | null }) {
                 onClick={() => (selected ? navigate('map') : setSheetOpen(!sheetOpen))}>
           <span className="panel__grip" aria-hidden="true" />
           {open ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
-          {selected ? t.ui.close : open ? t.map.hideList : `${t.map.showList} · ${visible.length}`}
+          {selected ? t.ui.close : open ? t.map.hideList : `${t.map.showList} · ${inView.length}`}
         </button>
 
         {selected ? (
@@ -147,13 +176,28 @@ export function MapPage({ placeId }: { placeId: number | null }) {
                 })}
               </div>
 
+              <div className="profile">
+                <span className="profile__title" id="profile-title">{t.profile.title}</span>
+                <div className="profile__seg" role="group" aria-labelledby="profile-title">
+                  {PROFILES.map((p) => {
+                    const Icon = PROFILE_ICON[p]
+                    return (
+                      <button key={p} type="button" aria-pressed={profile === p} title={t.profile[p]}
+                              aria-label={t.profile[p]} onClick={() => setProfile(p)}>
+                        <Icon size={17} aria-hidden="true" /> {t.profile[`${p}Short`]}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
               <div className="statuses" role="group" aria-label={t.map.statusFilter}>
                 {STATUSES.map((s) => (
                   <button key={s} type="button" className="status-btn" aria-pressed={only.has(s)}
                           onClick={() => toggleStatus(s)}>
                     <StatusGlyph status={s} size={22} />
                     <span>{t.status[s]}</span>
-                    <strong>{base.filter((p) => p.status === s).length}</strong>
+                    <strong>{counts[s]}</strong>
                   </button>
                 ))}
               </div>
@@ -169,7 +213,7 @@ export function MapPage({ placeId }: { placeId: number | null }) {
             <div className="panel__scroll">
               <div className="list__head" aria-live="polite">
                 <span>
-                  {loading ? t.ui.loading : t.map.found(visible.length)}
+                  {loading ? t.ui.loading : t.map.inView(inView.length, visible.length)}
                   {userPos && !loading && <small> · {t.map.nearestFirst}</small>}
                 </span>
                 {filtered && (
@@ -197,7 +241,7 @@ export function MapPage({ placeId }: { placeId: number | null }) {
               )}
 
               <ul className="list">
-                {visible.map((p) => {
+                {inView.slice(0, LIST_LIMIT).map((p) => {
                   const Icon = CATEGORY_ICON[p.category]
                   const dist = distanceLabel(p)
                   return (
@@ -221,6 +265,7 @@ export function MapPage({ placeId }: { placeId: number | null }) {
                 })}
               </ul>
 
+              {inView.length > LIST_LIMIT && <p className="list__more">{t.map.capped(LIST_LIMIT)}</p>}
               {IS_DEMO && <p className="list__demo">{t.ui.demoHint}</p>}
             </div>
           </>
@@ -229,7 +274,7 @@ export function MapPage({ placeId }: { placeId: number | null }) {
 
       <div className="mapwrap">
         <MapView places={onMap} selected={selected} userPos={userPos}
-                 onSelect={(id) => navigate(`map/${id}`)} />
+                 onSelect={(id) => navigate(`map/${id}`)} onBounds={setBounds} />
         <div className="mapwrap__top">
           {IS_DEMO && <span className="demo-pill" title={t.ui.demoHint}>{t.ui.demo}</span>}
           <button type="button" className="map-btn" onClick={locate} disabled={locating}

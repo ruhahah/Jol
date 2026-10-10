@@ -181,6 +181,21 @@
   width: 100%;
 }
 
+.controls__hint {
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+/* Внутри Telegram экран узкий и без шапки сайта */
+.slope--tg {
+  padding-top: 1rem;
+}
+
+.slope--tg .slope__head h1 {
+  font-size: 1.5rem;
+}
+
 .progress {
   display: block;
   height: 5px;

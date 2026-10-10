@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Header } from './components/Header'
 import { usePrefs } from './lib/prefs'
 import { useRoute } from './lib/router'
+import { IN_TELEGRAM } from './lib/telegram'
 import { Landing } from './pages/Landing'
 import { MapPage } from './pages/MapPage'
 import { SlopePage } from './pages/SlopePage'
@@ -14,6 +15,15 @@ export default function App() {
   useEffect(() => {
     window.scrollTo(0, 0) // в фигурных скобках: новые браузеры возвращают из scrollTo Promise
   }, [page])
+
+  // Открыты из бота как мини-приложение: только измеритель, без шапки и остального сайта
+  if (IN_TELEGRAM) {
+    return (
+      <main id="main">
+        <SlopePage />
+      </main>
+    )
+  }
 
   const skip = (e: React.MouseEvent) => {
     e.preventDefault() // обычный href="#main" сломал бы hash-маршруты

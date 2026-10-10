@@ -1,8 +1,9 @@
-import { Check, Copy, Crosshair, Play, Smartphone } from 'lucide-react'
+import { Check, Copy, Crosshair, Play, Send, Smartphone } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { GENTLE_MAX, MODERATE_MAX, RampGraphic, ZONE_STATUS, zoneOf } from '../components/RampGraphic'
 import { StatusGlyph } from '../components/StatusGlyph'
 import { usePrefs } from '../lib/prefs'
+import { IN_TELEGRAM, loadTelegram, type TgWebApp } from '../lib/telegram'
 import '../styles/slope.css'
 
 type Sensor = 'idle' | 'starting' | 'on' | 'none' | 'denied'
@@ -28,37 +29,72 @@ export function SlopePage() {
   const [measuring, setMeasuring] = useState(false)
   const [result, setResult] = useState<{ mean: number; spread: number; n: number } | null>(null)
   const [copied, setCopied] = useState(false)
+  const [tg, setTg] = useState<TgWebApp | null>(null)
 
   const raw = useRef({ beta: 0, gamma: 0 })
   const offset = useRef({ beta: 0, gamma: 0 })
   const smooth = useRef(0)
   const samples = useRef<number[] | null>(null)
 
+  // Открыты из бота: готовим мини-приложение и разворачиваем его на весь экран
+  useEffect(() => {
+    loadTelegram().then((app) => {
+      if (!app) return
+      app.ready()
+      app.expand()
+      setTg(app)
+    })
+  }, [])
+
   const listening = sensor === 'starting' || sensor === 'on'
 
   useEffect(() => {
     if (!listening) return
     let gotData = false
-    const onOrientation = (e: DeviceOrientationEvent) => {
-      if (e.beta === null || e.gamma === null) return
+
+    /** Одно показание датчика, углы в градусах */
+    const onReading = (beta: number, gamma: number) => {
       if (!gotData) {
         gotData = true
         setSensor('on')
       }
-      raw.current = { beta: e.beta, gamma: e.gamma }
-      const pct = slopePct(e.beta - offset.current.beta, e.gamma - offset.current.gamma)
+      raw.current = { beta, gamma }
+      const pct = slopePct(beta - offset.current.beta, gamma - offset.current.gamma)
       samples.current?.push(pct)
       smooth.current += (pct - smooth.current) * 0.15 // сглаживаем дрожание датчика
       setLive(smooth.current)
     }
-    window.addEventListener('deviceorientation', onOrientation)
+
+    const onBrowserEvent = (e: DeviceOrientationEvent) => {
+      if (e.beta !== null && e.gamma !== null) onReading(e.beta, e.gamma)
+    }
+    window.addEventListener('deviceorientation', onBrowserEvent)
+
+    // Внутри Telegram у мини-приложений есть свой датчик (отдаёт углы в радианах).
+    // Это запасной источник: включаем его, только если обычный датчик браузера молчит,
+    // чтобы показания двух источников не смешивались.
+    const orientation = tg?.isVersionAtLeast('8.0') ? tg.DeviceOrientation : undefined
+    const onTelegramEvent = () => orientation && onReading(orientation.beta / RAD, orientation.gamma / RAD)
+    let telegramStarted = false
+    const fallback = setTimeout(() => {
+      if (gotData || !tg || !orientation) return
+      telegramStarted = true
+      tg.onEvent('deviceOrientationChanged', onTelegramEvent)
+      orientation.start({ refresh_rate: 60 })
+    }, 600)
+
     // На компьютере событие либо не приходит, либо приходит пустым
-    const timeout = setTimeout(() => !gotData && setSensor('none'), 1500)
+    const timeout = setTimeout(() => !gotData && setSensor('none'), 2500)
     return () => {
-      window.removeEventListener('deviceorientation', onOrientation)
+      window.removeEventListener('deviceorientation', onBrowserEvent)
+      if (telegramStarted && tg && orientation) {
+        tg.offEvent('deviceOrientationChanged', onTelegramEvent)
+        orientation.stop()
+      }
+      clearTimeout(fallback)
       clearTimeout(timeout)
     }
-  }, [listening])
+  }, [listening, tg])
 
   const start = async () => {
     // iOS показывает системный запрос и только после него отдаёт данные датчика
@@ -66,9 +102,10 @@ export function SlopePage() {
       .requestPermission
     if (typeof ask === 'function') {
       try {
-        if ((await ask()) !== 'granted') return setSensor('denied')
+        // Внутри Telegram отказ браузера не страшен: остаётся датчик самого Telegram
+        if ((await ask()) !== 'granted' && !tg?.DeviceOrientation) return setSensor('denied')
       } catch {
-        return setSensor('denied')
+        if (!tg?.DeviceOrientation) return setSensor('denied')
       }
     }
     setSensor('starting')
@@ -111,8 +148,18 @@ export function SlopePage() {
     }
   }
 
+  /** Отдаём замер боту; Telegram после этого сам закрывает мини-приложение */
+  const sendToBot = () => {
+    if (!tg || !result) return
+    tg.sendData(JSON.stringify({
+      slope_pct: Math.round(result.mean * 10) / 10,
+      spread: Math.round(result.spread * 10) / 10,
+      n: result.n,
+    }))
+  }
+
   return (
-    <div className="slope container">
+    <div className={`slope container${IN_TELEGRAM ? ' slope--tg' : ''}`}>
       <header className="slope__head">
         <h1>{s.title}</h1>
         <p>{s.lead}</p>
@@ -164,7 +211,8 @@ export function SlopePage() {
         <section className="controls">
           {active ? (
             <>
-              <button type="button" className="btn btn--primary" onClick={measure} disabled={measuring}>
+              <button type="button" className={`btn ${tg && result ? 'btn--ghost' : 'btn--primary'}`}
+                      onClick={measure} disabled={measuring}>
                 <Play size={18} /> {measuring ? s.measuring : s.measure}
               </button>
               {measuring && <span className="progress" style={{ animationDuration: `${MEASURE_MS}ms` }} />}
@@ -179,17 +227,32 @@ export function SlopePage() {
               </button>
               {sensor === 'none' && <p className="notice">{s.noSensor}</p>}
               {sensor === 'denied' && <p className="notice">{s.denied}</p>}
-              <label className="slider">
-                <span>{s.demoSlider}</span>
-                <input type="range" min="0" max={SCALE_MAX} step="0.1" value={demo}
-                       onChange={(e) => setDemo(Number(e.target.value))} aria-valuetext={`${demo.toFixed(1)}%`} />
-              </label>
+              {/* В боте ползунок не показываем: в отчёт должен попасть только настоящий замер */}
+              {!IN_TELEGRAM && (
+                <label className="slider">
+                  <span>{s.demoSlider}</span>
+                  <input type="range" min="0" max={SCALE_MAX} step="0.1" value={demo}
+                         onChange={(e) => setDemo(Number(e.target.value))} aria-valuetext={`${demo.toFixed(1)}%`} />
+                </label>
+              )}
             </>
           )}
 
-          <button type="button" className="btn btn--ghost" onClick={copy}>
-            {copied ? <Check size={18} /> : <Copy size={18} />} {copied ? t.place.copied : s.copy}
-          </button>
+          {IN_TELEGRAM ? (
+            <>
+              <button type="button" className="btn btn--primary" onClick={sendToBot} disabled={!tg || !result}>
+                <Send size={18} /> {s.send}{result ? ` · ${result.mean.toFixed(1)}%` : ''}
+              </button>
+              {!result && <p className="controls__hint">{s.needMeasure}</p>}
+              <button type="button" className="btn btn--ghost" onClick={() => tg?.close()} disabled={!tg}>
+                {s.backToBot}
+              </button>
+            </>
+          ) : (
+            <button type="button" className="btn btn--ghost" onClick={copy}>
+              {copied ? <Check size={18} /> : <Copy size={18} />} {copied ? t.place.copied : s.copy}
+            </button>
+          )}
 
           <div className="tips">
             <h2>{s.tipsTitle}</h2>
