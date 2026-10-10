@@ -120,6 +120,7 @@ export const en: Dict = {
     verifiedOnly: 'Verified only',
     found: (n) => `Found: ${n}`,
     empty: 'Nothing found. Try removing some filters.',
+    noPlaces: 'There are no places on the map yet. Be the first to add an entrance.',
     reset: 'Reset filters',
     locate: 'Show where I am',
     locateError: 'Could not get your location',

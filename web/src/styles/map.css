@@ -284,6 +284,9 @@
 }
 
 .list__msg {
+  display: grid;
+  justify-items: center;
+  gap: 1rem;
   padding: 1.5rem 0.5rem;
   color: var(--ink-2);
   text-align: center;

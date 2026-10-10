@@ -1,12 +1,12 @@
 import {
   BadgeCheck, ChevronDown, ChevronUp, Coffee, GraduationCap, Landmark, LocateFixed, MapPin, Pill,
-  Search, ShoppingBag, Stethoscope, X, type LucideIcon,
+  Search, Send, ShoppingBag, Stethoscope, X, type LucideIcon,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { MapView } from '../components/MapView'
 import { ago, PlaceDetail } from '../components/PlaceDetail'
 import { StatusGlyph } from '../components/StatusGlyph'
-import { IS_DEMO } from '../lib/data'
+import { BOT_USERNAME, IS_DEMO } from '../lib/data'
 import { distanceM } from '../lib/geo'
 import { usePlaces } from '../lib/places'
 import { usePrefs } from '../lib/prefs'
@@ -180,7 +180,21 @@ export function MapPage({ placeId }: { placeId: number | null }) {
               </div>
 
               {error && <p className="list__msg">{t.ui.loadError}</p>}
-              {!loading && !error && visible.length === 0 && <p className="list__msg">{t.map.empty}</p>}
+              {!loading && !error && visible.length === 0 && (
+                places.length > 0 ? (
+                  <p className="list__msg">{t.map.empty}</p>
+                ) : (
+                  <div className="list__msg">
+                    <p>{t.map.noPlaces}</p>
+                    {BOT_USERNAME && (
+                      <a className="btn btn--primary btn--sm" target="_blank" rel="noreferrer"
+                         href={`https://t.me/${BOT_USERNAME}`}>
+                        <Send size={16} /> {t.hero.ctaBot}
+                      </a>
+                    )}
+                  </div>
+                )
+              )}
 
               <ul className="list">
                 {visible.map((p) => {
