@@ -16,5 +16,7 @@ services:
       # Значения вводятся в панели Render при создании, в репозиторий они не попадают
       - key: BOT_TOKEN
         sync: false
-      - key: DATABASE_URL
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
         sync: false

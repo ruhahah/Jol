@@ -270,7 +270,7 @@ async def got_answer(cb: CallbackQuery, state: FSMContext, lang: str, user_id: i
 async def main():
     load_dotenv()
     logging.basicConfig(level=logging.INFO)
-    await db.connect(os.environ["DATABASE_URL"])
+    await db.connect(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SECRET_KEY"])
     bot = Bot(os.environ["BOT_TOKEN"])
     # MemoryStorage: состояние диалога теряется при перезапуске бота — для MVP-0 это нормально.
     dp = Dispatcher(storage=MemoryStorage(), events_isolation=SimpleEventIsolation())
@@ -280,13 +280,16 @@ async def main():
     # На хостинге Telegram сам присылает сообщения на наш адрес (webhook).
     # Render подставляет RENDER_EXTERNAL_URL автоматически.
     base_url = os.getenv("WEBHOOK_URL") or os.getenv("RENDER_EXTERNAL_URL")
-    if base_url:
-        await run_webhook(bot, dp, base_url)
-    else:
-        # На своём компьютере бот сам опрашивает Telegram. Внимание: это отключает webhook,
-        # поэтому для локальных опытов при работающем хостинге заведи второго, тестового бота.
-        await bot.delete_webhook()
-        await dp.start_polling(bot)
+    try:
+        if base_url:
+            await run_webhook(bot, dp, base_url)
+        else:
+            # На своём компьютере бот сам опрашивает Telegram. Внимание: это отключает webhook,
+            # поэтому для локальных опытов при работающем хостинге заведи второго, тестового бота.
+            await bot.delete_webhook()
+            await dp.start_polling(bot)
+    finally:
+        await db.close()
 
 
 async def run_webhook(bot: Bot, dp: Dispatcher, base_url: str):
