@@ -195,7 +195,8 @@ async def chose_category(cb: CallbackQuery, state: FSMContext, lang: str):
 async def ask_photos(message: Message, state: FSMContext, lang: str):
     await state.set_state(Flow.photos)
     await state.update_data(photos=[])
-    await message.answer(t(lang, "ask_photos"), reply_markup=ReplyKeyboardRemove())
+    # Фото желательны, но не обязательны: иначе тот, кто не может снять вход, застревает здесь
+    await message.answer(t(lang, "ask_photos"), reply_markup=kb([(t(lang, "btn_no_photo"), "photos:done")]))
 
 
 @router.message(Flow.photos, F.photo)
