@@ -1,0 +1,20 @@
+# Описание сервиса для Render (render.com → New → Blueprint → выбрать этот репозиторий).
+# Бесплатный план засыпает через 15 минут без сообщений; первое сообщение после сна
+# бот получит с задержкой около минуты, остальные — сразу.
+services:
+  - type: web
+    name: jol-bot
+    runtime: python
+    plan: free
+    rootDir: bot
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      # Значения вводятся в панели Render при создании, в репозиторий они не попадают
+      - key: BOT_TOKEN
+        sync: false
+      - key: DATABASE_URL
+        sync: false
