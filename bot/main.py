@@ -8,7 +8,7 @@ from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage, SimpleEventIsolation
-from aiogram.types import (CallbackQuery, KeyboardButton, Message,
+from aiogram.types import (BotCommand, CallbackQuery, KeyboardButton, Message,
                            ReplyKeyboardMarkup, ReplyKeyboardRemove)
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
@@ -268,6 +268,30 @@ async def got_answer(cb: CallbackQuery, state: FSMContext, lang: str, user_id: i
     )
 
 
+# --- Всё, что не подошло ни под один шаг ----------------------------------------------
+# Состояние диалога хранится в памяти и пропадает при перезапуске бота (на бесплатном
+# хостинге — после каждого «сна»). Без этих двух хендлеров бот в таком случае просто молчит.
+
+@router.message()
+async def unexpected_message(message: Message, state: FSMContext, lang: str):
+    in_dialog = await state.get_state() is not None
+    await message.answer(t(lang, "use_buttons" if in_dialog else "start_hint"))
+
+
+@router.callback_query()
+async def stale_button(cb: CallbackQuery, lang: str):
+    await cb.answer(t(lang, "stale_button"), show_alert=True)
+
+
+async def set_commands(bot: Bot):
+    """Меню команд рядом с полем ввода — на языке интерфейса Telegram."""
+    for lang in (None, "kk", "en"):
+        await bot.set_my_commands(
+            [BotCommand(command=c, description=t(lang or "ru", f"cmd_{c}")) for c in ("add", "start", "cancel")],
+            language_code=lang,
+        )
+
+
 async def main():
     load_dotenv()
     logging.basicConfig(level=logging.INFO)
@@ -277,6 +301,7 @@ async def main():
     dp = Dispatcher(storage=MemoryStorage(), events_isolation=SimpleEventIsolation())
     dp.update.outer_middleware(UserMiddleware())
     dp.include_router(router)
+    await set_commands(bot)
 
     # На хостинге Telegram сам присылает сообщения на наш адрес (webhook).
     # Render подставляет RENDER_EXTERNAL_URL автоматически.
