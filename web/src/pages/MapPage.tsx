@@ -1,6 +1,6 @@
 import {
-  Accessibility, Baby, BadgeCheck, ChevronDown, ChevronUp, Coffee, Footprints, GraduationCap, Landmark,
-  LocateFixed, MapPin, Pill, Search, Send, ShoppingBag, Stethoscope, X, type LucideIcon,
+  Accessibility, Baby, BadgeCheck, BellRing, ChevronDown, ChevronUp, Coffee, Footprints, GraduationCap,
+  Landmark, LocateFixed, MapPin, Pill, Search, Send, ShoppingBag, Stethoscope, Toilet, X, type LucideIcon,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { MapView, type MapBounds } from '../components/MapView'
@@ -31,6 +31,9 @@ const PROFILE_ICON: Record<Profile, LucideIcon> = {
   walker: Footprints,
 }
 
+type Need = 'toilet' | 'callButton'
+const NEEDS: [Need, LucideIcon][] = [['toilet', Toilet], ['callButton', BellRing]]
+
 const STATUS_RANK: Record<Status, number> = { accessible: 0, partial: 1, inaccessible: 2, unknown: 3 }
 
 /** Сколько строк списка рисуем за раз: мест тысячи, а читать больше экрана-двух никто не будет */
@@ -43,6 +46,7 @@ export function MapPage({ placeId }: { placeId: number | null }) {
   const [category, setCategory] = useState<Category | 'all'>('all')
   const [only, setOnly] = useState<Set<Status>>(new Set()) // пусто = показывать все статусы
   const [verifiedOnly, setVerifiedOnly] = useState(false)
+  const [needs, setNeeds] = useState<Set<Need>>(new Set()) // что обязательно должно быть у входа
   const [userPos, setUserPos] = useState<[number, number] | null>(null)
   const [locating, setLocating] = useState(false)
   const [locError, setLocError] = useState(false)
@@ -70,9 +74,10 @@ export function MapPage({ placeId }: { placeId: number | null }) {
       (p) =>
         (category === 'all' || p.category === category) &&
         (!verifiedOnly || p.isVerified) &&
+        [...needs].every((need) => p.features?.[need] === 'yes') &&
         (!q || p.name.toLowerCase().includes(q)),
     )
-  }, [places, query, category, verifiedOnly])
+  }, [places, query, category, verifiedOnly, needs])
 
   const counts = useMemo(() => {
     const result: Record<Status, number> = { accessible: 0, partial: 0, inaccessible: 0, unknown: 0 }
@@ -103,12 +108,19 @@ export function MapPage({ placeId }: { placeId: number | null }) {
     )
   }, [visible, bounds, userPos])
 
-  const filtered = query !== '' || category !== 'all' || only.size > 0 || verifiedOnly
+  const filtered = query !== '' || category !== 'all' || only.size > 0 || verifiedOnly || needs.size > 0
   const reset = () => {
     setQuery('')
     setCategory('all')
     setOnly(new Set())
     setVerifiedOnly(false)
+    setNeeds(new Set())
+  }
+
+  const toggleNeed = (need: Need) => {
+    const next = new Set(needs)
+    if (!next.delete(need)) next.add(need)
+    setNeeds(next)
   }
 
   const toggleStatus = (s: Status) => {
@@ -198,6 +210,16 @@ export function MapPage({ placeId }: { placeId: number | null }) {
                     <StatusGlyph status={s} size={22} />
                     <span>{t.status[s]}</span>
                     <strong>{counts[s]}</strong>
+                  </button>
+                ))}
+              </div>
+
+              <div className="needs" role="group" aria-label={t.needs.title}>
+                <span className="needs__title">{t.needs.title}:</span>
+                {NEEDS.map(([need, Icon]) => (
+                  <button key={need} type="button" className="chip" aria-pressed={needs.has(need)}
+                          onClick={() => toggleNeed(need)}>
+                    <Icon size={16} /> {t.needs[need]}
                   </button>
                 ))}
               </div>

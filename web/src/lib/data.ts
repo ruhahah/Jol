@@ -48,6 +48,24 @@ export async function loadPlaces(): Promise<Place[]> {
   }))
 }
 
+export interface Leader {
+  id: number
+  name: string | null
+  points: number
+  reportsCount: number
+}
+
+/** Рейтинг волонтёров (представление leaderboard_public). В демо-режиме рейтинга нет. */
+export async function loadLeaders(): Promise<Leader[]> {
+  if (IS_DEMO) return []
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/leaderboard_public?select=*`, {
+    headers: { apikey: SUPABASE_KEY!, Authorization: `Bearer ${SUPABASE_KEY}` },
+  })
+  if (!res.ok) throw new Error(`Supabase ${res.status}`)
+  const rows: Record<string, any>[] = await res.json()
+  return rows.map((r) => ({ id: r.id, name: r.name, points: r.points, reportsCount: r.reports_count }))
+}
+
 // --- Демо-данные -------------------------------------------------------------------
 // Вымышленные точки, чтобы карта не была пустой до запуска бота. Генератор
 // детерминированный: при каждой загрузке получается один и тот же набор.

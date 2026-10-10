@@ -22,7 +22,9 @@ export function Header({ page }: { page: string }) {
 
   useEffect(() => setOpen(false), [page])
 
-  const links: [string, string][] = [['', t.nav.home], ['map', t.nav.map], ['slope', t.nav.slope]]
+  const links: [string, string][] = [
+    ['', t.nav.home], ['map', t.nav.map], ['slope', t.nav.slope], ['stats', t.nav.stats],
+  ]
   const nav = links.map(([path, label]) => (
     <a key={path} href={`#/${path}`} aria-current={page === path ? 'page' : undefined}>
       {label}

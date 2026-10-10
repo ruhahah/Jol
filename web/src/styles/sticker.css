@@ -1,0 +1,141 @@
+.sticker-page {
+  display: grid;
+  justify-items: center;
+  gap: 1.25rem;
+  padding-block: 1.5rem 4rem;
+}
+
+.sticker-msg {
+  padding-block: 3rem;
+  color: var(--ink-2);
+}
+
+.sticker-tools {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.6rem;
+}
+
+/* Сам лист: фиксированные светлые цвета, чтобы на бумаге выглядел так же, как на экране */
+.sticker {
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --ink: #141820;
+  --ink-2: #454d5c;
+  --muted: #6d7584;
+  --line: #ddd6c6;
+  --brand: #1f4fd8;
+  --brand-ink: #ffffff;
+  --st-accessible: #0f9d62;
+  --st-partial: #e5a100;
+  --st-inaccessible: #c9341f;
+  --st-unknown: #9ba2af;
+  --st-accessible-soft: #dff3e8;
+  --st-partial-soft: #fbefc9;
+  --st-inaccessible-soft: #fae0db;
+  --st-unknown-soft: #e9ebef;
+
+  display: grid;
+  justify-items: center;
+  gap: 1.1rem;
+  width: min(100%, 26rem);
+  padding: 2rem 1.75rem 1.5rem;
+  border: 3px solid var(--brand);
+  border-radius: 1.6rem;
+  background: #fff;
+  color: var(--ink);
+  text-align: center;
+  box-shadow: var(--shadow-2);
+}
+
+.sticker__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.sticker__brand svg {
+  width: 2.4rem;
+  height: 2.4rem;
+}
+
+.sticker h1 {
+  font-size: 1.55rem;
+}
+
+.sticker__qr {
+  width: min(100%, 15rem);
+  aspect-ratio: 1;
+}
+
+.sticker__qr svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.sticker__text {
+  color: var(--ink-2);
+  font-size: 0.98rem;
+}
+
+.sticker__place {
+  display: grid;
+  justify-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding-top: 1rem;
+  border-top: 2px dashed var(--line);
+}
+
+.sticker__place strong {
+  font-size: 1.15rem;
+  overflow-wrap: anywhere;
+}
+
+.sticker__place span {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  color: var(--ink-2);
+  font-size: 0.92rem;
+}
+
+.sticker__place .badge {
+  color: var(--ink);
+}
+
+.sticker__footer {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+@media print {
+  .header,
+  .skip-link,
+  .sticker-tools {
+    display: none !important;
+  }
+
+  body {
+    background: #fff;
+  }
+
+  .sticker-page {
+    padding: 0;
+  }
+
+  .sticker {
+    width: 12cm;
+    box-shadow: none;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}

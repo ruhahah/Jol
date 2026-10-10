@@ -142,6 +142,23 @@
   box-shadow: var(--shadow-1);
 }
 
+.needs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.needs__title {
+  color: var(--ink-2);
+  font-size: 0.9rem;
+}
+
+.needs .chip {
+  min-height: 2.2rem;
+  font-size: 0.88rem;
+}
+
 .list__more {
   margin-top: 0.9rem;
   color: var(--muted);
@@ -817,6 +834,7 @@
   /* В свёрнутой шторке видны только поиск и категории */
   .mapapp:not(.is-open) .statuses,
   .mapapp:not(.is-open) .profile,
+  .mapapp:not(.is-open) .needs,
   .mapapp:not(.is-open) .switch,
   .mapapp:not(.is-open) .panel__scroll {
     display: none;

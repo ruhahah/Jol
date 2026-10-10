@@ -1,6 +1,6 @@
 import {
   ArrowLeft, BadgeCheck, BellRing, Camera, Check, CircleHelp, Clock, DoorOpen, ExternalLink, Link2,
-  Minus, Send, Toilet, TriangleAlert, X,
+  Minus, QrCode, Send, Toilet, TriangleAlert, X,
 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { BOT_USERNAME, IS_DEMO } from '../lib/data'
@@ -170,6 +170,9 @@ export function PlaceDetail({ place, distance }: { place: Place; distance: strin
           <button type="button" className="btn btn--ghost btn--sm" onClick={copy}>
             {copied ? <Check size={15} /> : <Link2 size={15} />} {copied ? t.place.copied : t.place.copyLink}
           </button>
+          <a className="btn btn--ghost btn--sm" href={`#/sticker/${place.id}`}>
+            <QrCode size={15} /> {t.sticker.link}
+          </a>
         </div>
       </section>
 

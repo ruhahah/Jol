@@ -6,11 +6,13 @@ import { IN_TELEGRAM } from './lib/telegram'
 import { Landing } from './pages/Landing'
 import { MapPage } from './pages/MapPage'
 import { SlopePage } from './pages/SlopePage'
+import { StatsPage } from './pages/StatsPage'
+import { StickerPage } from './pages/StickerPage'
 
 export default function App() {
   const { t } = usePrefs()
   const route = useRoute()
-  const page = ['map', 'slope'].includes(route[0]) ? route[0] : ''
+  const page = ['map', 'slope', 'stats', 'sticker'].includes(route[0]) ? route[0] : ''
 
   useEffect(() => {
     window.scrollTo(0, 0) // в фигурных скобках: новые браузеры возвращают из scrollTo Promise
@@ -39,6 +41,10 @@ export default function App() {
           <MapPage placeId={route[1] ? Number(route[1]) : null} />
         ) : page === 'slope' ? (
           <SlopePage />
+        ) : page === 'stats' ? (
+          <StatsPage />
+        ) : page === 'sticker' ? (
+          <StickerPage placeId={route[1] ? Number(route[1]) : null} />
         ) : (
           <Landing />
         )}
