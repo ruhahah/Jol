@@ -7,7 +7,10 @@ import json
 import aiohttp
 
 POINTS_PER_REPORT = 10
-SEARCH_RADIUS_M = 200
+POINTS_PER_CONFIRM = 5
+SEARCH_RADIUS_M = 200     # «места рядом» при добавлении отчёта
+FIND_RADIUS_M = 1500      # поиск доступных мест
+CHECK_RADIUS_M = 500      # места, ждущие второго мнения
 
 _session: aiohttp.ClientSession | None = None
 _rpc_url = ""
@@ -50,6 +53,28 @@ async def get_place(place_id: int) -> dict | None:
 
 async def nearby_places(lat: float, lon: float) -> list[dict]:
     return await _rpc("bot_nearby_places", p_lat=lat, p_lon=lon, p_radius=SEARCH_RADIUS_M)
+
+
+async def find_accessible(lat: float, lon: float, category: str | None = None) -> list[dict]:
+    """Ближайшие места со статусом «доступно» или «частично»."""
+    return await _rpc("bot_find_accessible", p_lat=lat, p_lon=lon, p_category=category,
+                      p_radius=FIND_RADIUS_M)
+
+
+async def places_to_verify(user_id: int, lat: float, lon: float) -> list[dict]:
+    """Места рядом, которые ждут второго мнения, вместе с ответами последнего отчёта."""
+    return await _rpc("bot_places_to_verify", p_user_id=user_id, p_lat=lat, p_lon=lon,
+                      p_radius=CHECK_RADIUS_M)
+
+
+async def confirm_report(user_id: int, report_id: int) -> dict | None:
+    """Подтверждает чужой отчёт. None — если подтвердить нельзя (свой или уже подтверждал)."""
+    return await _rpc("bot_confirm_report", p_user_id=user_id, p_report_id=report_id,
+                      p_points=POINTS_PER_CONFIRM)
+
+
+async def dispute_report(user_id: int, report_id: int) -> None:
+    await _rpc("bot_dispute_report", p_user_id=user_id, p_report_id=report_id)
 
 
 async def save_report(*, user_id: int, lat: float | None, lon: float | None, answers: dict, status: str,
