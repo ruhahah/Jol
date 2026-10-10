@@ -3,6 +3,7 @@
 Прямое подключение к Postgres (порт 5432) блокируется во многих сетях, а HTTPS работает везде.
 Вся логика транзакций живёт в SQL-функциях, здесь только их вызовы."""
 import json
+from datetime import datetime, timezone
 
 import aiohttp
 
@@ -13,12 +14,14 @@ FIND_RADIUS_M = 1500      # поиск доступных мест
 CHECK_RADIUS_M = 500      # места, ждущие второго мнения
 
 _session: aiohttp.ClientSession | None = None
+_rest_url = ""
 _rpc_url = ""
 
 
 async def connect(supabase_url: str, secret_key: str) -> None:
-    global _session, _rpc_url
-    _rpc_url = supabase_url.rstrip("/") + "/rest/v1/rpc/"
+    global _session, _rest_url, _rpc_url
+    _rest_url = supabase_url.rstrip("/") + "/rest/v1/"
+    _rpc_url = _rest_url + "rpc/"
     _session = aiohttp.ClientSession(
         headers={"apikey": secret_key, "Authorization": f"Bearer {secret_key}"},
         timeout=aiohttp.ClientTimeout(total=20),
@@ -36,6 +39,41 @@ async def _rpc(function: str, **params):
         if res.status >= 400:
             raise RuntimeError(f"Supabase {function}: HTTP {res.status} {body[:300]}")
         return json.loads(body) if body else None
+
+
+# --- Шаг диалога (таблица bot_state), чтобы он переживал «сон» бесплатного хостинга ----
+
+async def load_state(key: str) -> dict | None:
+    params = {"key": f"eq.{key}", "select": "state,data,updated_at"}
+    async with _session.get(_rest_url + "bot_state", params=params) as res:
+        rows = await res.json() if res.status == 200 else []
+        return rows[0] if rows else None
+
+
+async def save_state(key: str, state: str | None, data: dict) -> None:
+    headers = {"Prefer": "resolution=merge-duplicates,return=minimal"}
+    row = {"key": key, "state": state, "data": data, "updated_at": datetime.now(timezone.utc).isoformat()}
+    async with _session.post(_rest_url + "bot_state", params={"on_conflict": "key"},
+                             json=row, headers=headers) as res:
+        if res.status >= 400:
+            raise RuntimeError(f"Supabase bot_state: HTTP {res.status} {(await res.text())[:200]}")
+
+
+async def delete_state(key: str) -> None:
+    async with _session.delete(_rest_url + "bot_state", params={"key": f"eq.{key}"}) as res:
+        if res.status >= 400:
+            raise RuntimeError(f"Supabase bot_state: HTTP {res.status}")
+
+
+# --- Пользователи ------------------------------------------------------------------------
+
+async def me(user_id: int) -> dict:
+    """Профиль для /me: очки, число отчётов и подтверждений, место в рейтинге."""
+    return await _rpc("bot_me", p_user_id=user_id)
+
+
+async def set_name(user_id: int, name: str) -> None:
+    await _rpc("bot_set_name", p_user_id=user_id, p_name=name)
 
 
 async def touch_user(tg_id: int, username: str | None) -> dict:

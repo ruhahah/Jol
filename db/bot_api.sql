@@ -223,6 +223,48 @@ language sql set search_path = public, extensions as $$
     on conflict (report_id, user_id) do nothing;
 $$;
 
+-- Имя, под которым волонтёр виден в рейтинге на сайте. Пока не задано — «Волонтёр №…».
+-- Telegram-имя наружу не показываем никогда.
+alter table users add column if not exists display_name text;
+
+create or replace function bot_set_name(p_user_id bigint, p_name text) returns void
+language sql set search_path = public, extensions as $$
+    update users
+    set display_name = nullif(left(btrim(regexp_replace(p_name, '\s+', ' ', 'g')), 24), '')
+    where id = p_user_id;
+$$;
+
+-- Профиль для команды /me. Подтверждение создаёт копию отчёта, поэтому собственные
+-- отчёты = все отчёты минус подтверждения.
+create or replace function bot_me(p_user_id bigint) returns jsonb
+language sql stable set search_path = public, extensions as $$
+    select jsonb_build_object(
+        'id', u.id,
+        'display_name', u.display_name,
+        'points', u.points,
+        'confirms', c.confirms,
+        'reports', greatest((select count(*) from reports r where r.user_id = u.id) - c.confirms, 0),
+        'rank', (select count(*) + 1 from users other where other.points > u.points)
+    )
+    from users u
+    cross join lateral (
+        select count(*) as confirms from verifications v where v.user_id = u.id and v.kind = 'confirm'
+    ) c
+    where u.id = p_user_id;
+$$;
+
+-- Шаг диалога каждого пользователя. Бесплатный хостинг усыпляет бота через 15 минут без
+-- сообщений, и память очищается; с этой таблицей человек продолжает с того же места.
+create table if not exists bot_state (
+    key        text primary key,          -- "<chat_id>:<user_id>"
+    state      text,
+    data       jsonb not null default '{}',
+    updated_at timestamptz not null default now()
+);
+alter table bot_state enable row level security;
+revoke all on bot_state from anon, authenticated;
+grant all on bot_state to service_role;
+
 -- По умолчанию функции в схеме public может вызвать кто угодно, включая anon. Закрываем.
 do $$
 declare
@@ -238,7 +280,9 @@ begin
         'bot_find_accessible(float8, float8, place_category, float8, integer)',
         'bot_places_to_verify(bigint, float8, float8, float8)',
         'bot_confirm_report(bigint, bigint, integer)',
-        'bot_dispute_report(bigint, bigint)'
+        'bot_dispute_report(bigint, bigint)',
+        'bot_set_name(bigint, text)',
+        'bot_me(bigint)'
     ] loop
         execute format('revoke all on function %s from public, anon, authenticated', fn);
         execute format('grant execute on function %s to service_role', fn);

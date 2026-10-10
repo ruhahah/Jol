@@ -35,3 +35,18 @@ left join lateral (
 -- Представление выполняется с правами владельца, поэтому RLS на таблицах его не блокирует,
 -- а anon видит ровно те столбцы, что перечислены выше.
 grant select on places_public to anon;
+
+-- Рейтинг волонтёров для сайта: только придуманное имя, очки и число отчётов.
+-- Ни Telegram ID, ни Telegram-имя сюда не попадают. Требует db/bot_api.sql (столбец display_name).
+create or replace view leaderboard_public as
+select
+    u.id,
+    u.display_name as name,
+    u.points,
+    (select count(*) from reports r where r.user_id = u.id) as reports_count
+from users u
+where u.points > 0
+order by u.points desc, u.id
+limit 20;
+
+grant select on leaderboard_public to anon;

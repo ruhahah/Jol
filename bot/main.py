@@ -9,7 +9,7 @@ from aiogram import BaseMiddleware, Bot, Dispatcher, F, Router
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.storage.memory import MemoryStorage, SimpleEventIsolation
+from aiogram.fsm.storage.memory import SimpleEventIsolation
 from aiogram.types import (BotCommand, CallbackQuery, InlineKeyboardButton, KeyboardButton, Message,
                            ReplyKeyboardMarkup, ReplyKeyboardRemove, WebAppInfo)
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -19,11 +19,14 @@ from dotenv import load_dotenv
 
 import db
 from scoring import report_status
+from storage import FlushStateMiddleware, SupabaseStorage
 from texts import CATEGORIES, CHOOSE_LANG, LANGS, t
 
 MAX_PHOTOS = 3
 WEBHOOK_PATH = "/webhook"
-COMMANDS = ("find", "add", "check", "menu", "start", "cancel")
+COMMANDS = ("find", "add", "check", "me", "menu", "start", "cancel")
+# Очки, с которых начинается каждый уровень (названия — level_0 … level_3 в texts.py)
+LEVELS = (0, 30, 100, 300)
 STATUS_EMOJI = {"accessible": "🟢", "partial": "🟡", "inaccessible": "🔴", "unknown": "⚪"}
 
 # Порядок вопросов и допустимые ответы. Значения совпадают с enum в db/schema.sql.
@@ -78,7 +81,21 @@ def kb(buttons: list[tuple[str, str]], width: int = 1):
 
 
 def menu_kb(lang: str):
-    return kb([(t(lang, f"btn_{action}"), f"menu:{action}") for action in ("find", "add", "check")])
+    return kb([(t(lang, f"btn_{action}"), f"menu:{action}") for action in ("find", "add", "check", "me")])
+
+
+async def profile_text(lang: str, user_id: int) -> str:
+    me = await db.me(user_id)
+    level = max(i for i, threshold in enumerate(LEVELS) if me["points"] >= threshold)
+    upcoming = ""
+    if level + 1 < len(LEVELS):
+        upcoming = t(lang, "me_next", level=t(lang, f"level_{level + 1}"), left=LEVELS[level + 1] - me["points"])
+    return t(
+        lang, "me",
+        name=me["display_name"] or t(lang, "me_anon", id=me["id"]),
+        level=t(lang, f"level_{level}"), next=upcoming,
+        points=me["points"], reports=me["reports"], confirms=me["confirms"], rank=me["rank"],
+    )
 
 
 def next_question(answers: dict) -> str | None:
@@ -144,12 +161,28 @@ async def cmd_menu(message: Message, state: FSMContext, lang: str):
 
 
 @router.callback_query(F.data.startswith("menu:"))
-async def chose_menu(cb: CallbackQuery, state: FSMContext, lang: str):
+async def chose_menu(cb: CallbackQuery, state: FSMContext, lang: str, user_id: int):
     purpose = cb.data.split(":")[1]
-    if purpose not in ("find", "add", "check"):
-        return await cb.answer()
     await cb.answer()
-    await ask_location(cb.message, state, lang, purpose)
+    if purpose == "me":
+        await cb.message.answer(await profile_text(lang, user_id))
+    elif purpose in ("find", "add", "check"):
+        await ask_location(cb.message, state, lang, purpose)
+
+
+@router.message(Command("me"))
+async def cmd_me(message: Message, lang: str, user_id: int):
+    await message.answer(await profile_text(lang, user_id), reply_markup=menu_kb(lang))
+
+
+@router.message(Command("name"))
+async def cmd_name(message: Message, lang: str, user_id: int, command: CommandObject):
+    """Имя для рейтинга на сайте. Telegram-имя мы не публикуем, поэтому человек выбирает его сам."""
+    name = " ".join((command.args or "").split())[:24]
+    if len(name) < 2:
+        return await message.answer(t(lang, "name_help"))
+    await db.set_name(user_id, name)
+    await message.answer(t(lang, "name_saved", name=name))
 
 
 @router.message(Command("find", "add", "check"))
@@ -467,8 +500,7 @@ async def slope_skipped_or_other(message: Message, state: FSMContext, lang: str,
 
 
 # --- Всё, что не подошло ни под один шаг ----------------------------------------------
-# Состояние диалога хранится в памяти и пропадает при перезапуске бота (на бесплатном
-# хостинге — после каждого «сна»). Без этих двух хендлеров бот в таком случае просто молчит.
+# Например, кнопка из давно законченного диалога. Без этих двух хендлеров бот бы молчал.
 
 @router.message()
 async def unexpected_message(message: Message, state: FSMContext, lang: str):
@@ -496,8 +528,10 @@ async def main():
     logging.basicConfig(level=logging.INFO)
     await db.connect(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SECRET_KEY"])
     bot = Bot(os.environ["BOT_TOKEN"])
-    # MemoryStorage: состояние диалога теряется при перезапуске бота — для MVP это нормально.
-    dp = Dispatcher(storage=MemoryStorage(), events_isolation=SimpleEventIsolation())
+    # Шаг диалога дублируется в базу, чтобы пережить «сон» бесплатного хостинга (см. storage.py)
+    storage = SupabaseStorage()
+    dp = Dispatcher(storage=storage, events_isolation=SimpleEventIsolation())
+    dp.update.outer_middleware(FlushStateMiddleware(storage))
     dp.update.outer_middleware(UserMiddleware())
     dp.include_router(router)
     await set_commands(bot)

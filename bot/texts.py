@@ -10,6 +10,20 @@ TEXTS = {
         "btn_find": "🔎 Найти доступное место",
         "btn_add": "➕ Добавить место",
         "btn_check": "✅ Проверить места рядом",
+        "btn_me": "👤 Мой профиль",
+        "me": "{name}\nУровень: {level} · {points} очков{next}\n"
+              "Отчётов: {reports} · Подтверждений: {confirms}\nМесто в рейтинге: {rank}\n\n"
+              "Имя для рейтинга на сайте: /name Ваше имя",
+        "me_next": " (до уровня «{level}» — {left})",
+        "me_anon": "Волонтёр №{id}",
+        "level_0": "Новичок",
+        "level_1": "Следопыт",
+        "level_2": "Картограф",
+        "level_3": "Проводник",
+        "name_saved": "Готово. В рейтинге на сайте вы теперь «{name}».",
+        "name_help": "Напишите имя после команды, например: /name Айгерим\n"
+                     "От 2 до 24 символов. Его увидят все посетители сайта.",
+        "cmd_me": "Мой профиль и очки",
         "ask_location_add": "Встаньте у входа и отправьте геолокацию 📍",
         "ask_location_find": "Отправьте геолокацию — покажу ближайшие места, куда можно попасть 📍",
         "ask_location_check": "Отправьте геолокацию — покажу места рядом, которые ждут второго мнения 📍",
@@ -100,6 +114,20 @@ TEXTS = {
         "btn_find": "🔎 Қолжетімді орын табу",
         "btn_add": "➕ Орын қосу",
         "btn_check": "✅ Жақын орындарды тексеру",
+        "btn_me": "👤 Менің профилім",
+        "me": "{name}\nДеңгей: {level} · {points} ұпай{next}\n"
+              "Есептер: {reports} · Растаулар: {confirms}\nРейтингтегі орын: {rank}\n\n"
+              "Сайттағы рейтингке арналған есім: /name Есіміңіз",
+        "me_next": " («{level}» деңгейіне дейін — {left})",
+        "me_anon": "Ерікті №{id}",
+        "level_0": "Жаңадан бастаушы",
+        "level_1": "Ізкесуші",
+        "level_2": "Картограф",
+        "level_3": "Жолбасшы",
+        "name_saved": "Дайын. Сайттағы рейтингте енді «{name}» деп көрсетілесіз.",
+        "name_help": "Команданың соңына есіміңізді жазыңыз, мысалы: /name Айгерім\n"
+                     "2-ден 24 таңбаға дейін. Оны сайтқа кірген барлық адам көреді.",
+        "cmd_me": "Менің профилім мен ұпайларым",
         "ask_location_add": "Кіреберістің жанында тұрып, геолокацияңызды жіберіңіз 📍",
         "ask_location_find": "Геолокация жіберіңіз — кіруге болатын ең жақын орындарды көрсетемін 📍",
         "ask_location_check": "Геолокация жіберіңіз — екінші пікірді күтіп тұрған жақын орындарды көрсетемін 📍",
@@ -191,6 +219,20 @@ TEXTS = {
         "btn_find": "🔎 Find an accessible place",
         "btn_add": "➕ Add a place",
         "btn_check": "✅ Check places nearby",
+        "btn_me": "👤 My profile",
+        "me": "{name}\nLevel: {level} · {points} points{next}\n"
+              "Reports: {reports} · Confirmations: {confirms}\nRank: {rank}\n\n"
+              "Name for the leaderboard on the site: /name Your name",
+        "me_next": " ({left} to reach “{level}”)",
+        "me_anon": "Volunteer #{id}",
+        "level_0": "Newcomer",
+        "level_1": "Pathfinder",
+        "level_2": "Cartographer",
+        "level_3": "Guide",
+        "name_saved": "Done. On the site leaderboard you are now “{name}”.",
+        "name_help": "Type a name after the command, for example: /name Aigerim\n"
+                     "2 to 24 characters. Every visitor of the site will see it.",
+        "cmd_me": "My profile and points",
         "ask_location_add": "Stand at the entrance and send your location 📍",
         "ask_location_find": "Send your location and I will show the nearest places you can get into 📍",
         "ask_location_check": "Send your location and I will show nearby places waiting for a second opinion 📍",
