@@ -1,4 +1,5 @@
--- Jol: публичное чтение для сайта. Выполнить в Supabase SQL Editor после schema.sql.
+-- Jol: публичное чтение для сайта. Выполнить в Supabase SQL Editor после schema.sql
+-- и bot_api.sql (он добавляет столбцы, на которые ссылаются представления ниже).
 -- Повторный запуск безопасен.
 --
 -- Сайт читает только это представление по anon-ключу. Таблицы users, reports и photos
@@ -22,7 +23,11 @@ select
     r.door_wide,
     r.call_button,
     r.toilet,
-    r.ramp_slope_pct
+    r.ramp_slope_pct,
+    -- самая свежая заметка волонтёра об этом входе (например, «вход со двора»)
+    (select comment from reports
+     where place_id = p.id and comment is not null
+     order by created_at desc limit 1) as comment
 from places p
 left join lateral (
     select steps, ramp, door_wide, call_button, toilet, ramp_slope_pct
@@ -30,7 +35,9 @@ left join lateral (
     where place_id = p.id and status <> 'unknown'
     order by created_at desc
     limit 1
-) r on true;
+) r on true
+-- места, которых больше нет (см. bot_flag_gone в bot_api.sql), на сайте не показываем
+where not p.hidden;
 
 -- Представление выполняется с правами владельца, поэтому RLS на таблицах его не блокирует,
 -- а anon видит ровно те столбцы, что перечислены выше.
@@ -46,9 +53,19 @@ select
     count(*) filter (where status = 'unknown')        as unknown,
     count(*) filter (where is_verified)               as verified,
     coalesce(sum(reports_count), 0)                   as reports
-from places;
+from places
+where not hidden;
 
 grant select on places_summary_public to anon;
+
+-- История проверок места для карточки на сайте: только дата, оценка и измеренный уклон.
+-- Кто именно проверял, наружу не отдаётся.
+create or replace view place_history_public as
+select place_id, created_at, status, ramp_slope_pct
+from reports
+where status <> 'unknown';
+
+grant select on place_history_public to anon;
 
 -- Рейтинг волонтёров для сайта: только придуманное имя, очки и число отчётов.
 -- Ни Telegram ID, ни Telegram-имя сюда не попадают. Требует db/bot_api.sql (столбец display_name).

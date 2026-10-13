@@ -5,6 +5,21 @@
 -- Вызывать функции может только сервисный ключ (service_role). По публичному anon-ключу
 -- они недоступны.
 
+-- Дополнения к схеме (идут первыми: функции ниже на них ссылаются).
+-- Место, которого больше нет: скрывается, когда об этом сообщили два разных человека.
+-- Вернуть ошибочно скрытое место: update places set hidden = false where id = ...;
+alter table places add column if not exists hidden boolean not null default false;
+
+create table if not exists place_flags (
+    place_id   bigint not null references places (id) on delete cascade,
+    user_id    bigint not null references users (id) on delete cascade,
+    created_at timestamptz not null default now(),
+    primary key (place_id, user_id)
+);
+alter table place_flags enable row level security;
+revoke all on place_flags from anon, authenticated;
+grant all on place_flags to service_role;
+
 -- Пересчёт агрегатов места. Берём последний отчёт каждого пользователя за 12 месяцев
 -- (без «не знаю»). Статус места = самый частый; при равенстве — более строгий.
 -- «Проверено» = за этот статус высказались минимум 2 разных человека.
@@ -54,7 +69,43 @@ $$;
 -- {"id": ..., "name": ...} или null, если места нет
 create or replace function bot_get_place(p_place_id bigint) returns jsonb
 language sql stable set search_path = public, extensions as $$
-    select jsonb_build_object('id', id, 'name', name) from places where id = p_place_id;
+    select jsonb_build_object('id', id, 'name', name) from places where id = p_place_id and not hidden;
+$$;
+
+-- Поиск места по части названия (без учёта регистра), для команды /search
+create or replace function bot_search(p_query text, p_limit integer default 8) returns jsonb
+language sql stable set search_path = public, extensions as $$
+    select coalesce(jsonb_agg(to_jsonb(found)), '[]'::jsonb)
+    from (
+        select id, name, category, status
+        from places
+        where not hidden
+          -- экранируем % и _, чтобы они искались как обычные символы
+          and name ilike '%' || replace(replace(replace(btrim(p_query), '\', '\\'), '%', '\%'), '_', '\_') || '%'
+        order by (status = 'unknown'), length(name), name
+        limit p_limit
+    ) found;
+$$;
+
+-- «Места больше нет». Каждый человек считается один раз; после второго сигнала место скрывается.
+-- Возвращает {"name", "flags", "hidden"} или null, если места нет.
+create or replace function bot_flag_gone(p_user_id bigint, p_place_id bigint) returns jsonb
+language plpgsql set search_path = public, extensions as $$
+declare
+    v_flags integer;
+    result  jsonb;
+begin
+    if not exists (select 1 from places where id = p_place_id) then
+        return null;
+    end if;
+    insert into place_flags (place_id, user_id) values (p_place_id, p_user_id)
+    on conflict do nothing;
+    select count(*) into v_flags from place_flags where place_id = p_place_id;
+    update places set hidden = true where id = p_place_id and v_flags >= 2;
+    select jsonb_build_object('name', name, 'flags', v_flags, 'hidden', hidden)
+    into result from places where id = p_place_id;
+    return result;
+end
 $$;
 
 -- До 8 ближайших мест в радиусе p_radius метров, от ближнего к дальнему
@@ -71,6 +122,7 @@ language sql stable set search_path = public, extensions as $$
         from places p,
              (select st_setsrid(st_makepoint(p_lon, p_lat), 4326)::geography as g) pt
         where st_dwithin(p.geom, pt.g, p_radius)
+          and not p.hidden
         order by dist_m
         limit 8
     ) nearest;
@@ -103,13 +155,15 @@ begin
     end if;
 
     insert into reports (place_id, user_id, steps, ramp, door_wide, call_button, toilet,
-                         ramp_slope_pct, status)
+                         comment, ramp_slope_pct, status)
     values (v_place_id, p_user_id,
             coalesce(p_answers->>'steps', 'unknown')::steps_level,
             coalesce(p_answers->>'ramp', 'unknown')::ramp_state,
             coalesce(p_answers->>'door_wide', 'unknown')::tri_state,
             coalesce(p_answers->>'call_button', 'unknown')::tri_state,
             coalesce(p_answers->>'toilet', 'unknown')::tri_state,
+            -- заметка волонтёра («вход со двора»); её видят все на сайте, поэтому не длиннее 200 символов
+            nullif(left(btrim(regexp_replace(p_answers->>'comment', '\s+', ' ', 'g')), 200), ''),
             -- уклон, измеренный телефоном; зажимаем в допустимые рамки столбца.
             -- case нужен, потому что greatest/least игнорируют null и превратили бы «не мерили» в 0
             case when v_slope is not null then least(greatest(v_slope, 0), 100) end,
@@ -144,6 +198,7 @@ language sql stable set search_path = public, extensions as $$
         from places p,
              (select st_setsrid(st_makepoint(p_lon, p_lat), 4326)::geography as g) pt
         where p.status in ('accessible', 'partial')
+          and not p.hidden
           and (p_category is null or p.category = p_category)
           and st_dwithin(p.geom, pt.g, p_radius)
         order by dist_m
@@ -171,6 +226,7 @@ language sql stable set search_path = public, extensions as $$
             limit 1
         ) r on true
         where not p.is_verified
+          and not p.hidden
           and st_dwithin(p.geom, pt.g, p_radius)
           and not exists (select 1 from reports where place_id = p.id and user_id = p_user_id)
         order by dist_m
@@ -208,8 +264,13 @@ begin
     perform recalc_place(r.place_id);
     update users set points = points + p_points where id = p_user_id;
 
-    select jsonb_build_object('place_id', id, 'name', name, 'status', status, 'is_verified', is_verified)
-    into result from places where id = r.place_id;
+    -- author_* нужны боту, чтобы написать автору отчёта: «ваш отчёт подтвердили»
+    select jsonb_build_object('place_id', p.id, 'name', p.name, 'status', p.status,
+                              'is_verified', p.is_verified,
+                              'author_tg_id', author.tg_id, 'author_lang', author.lang)
+    into result
+    from places p, users author
+    where p.id = r.place_id and author.id = r.user_id;
     return result;
 end
 $$;
@@ -244,6 +305,13 @@ language sql stable set search_path = public, extensions as $$
         'points', u.points,
         'confirms', c.confirms,
         'reports', greatest((select count(*) from reports r where r.user_id = u.id) - c.confirms, 0),
+        -- сколько раз человек сам измерил уклон (копии при подтверждении не считаются)
+        'slopes', (select count(*) from reports r
+                   where r.user_id = u.id and r.ramp_slope_pct is not null
+                     and not exists (select 1 from verifications v
+                                     join reports original on original.id = v.report_id
+                                     where v.user_id = u.id and v.kind = 'confirm'
+                                       and original.place_id = r.place_id)),
         'rank', (select count(*) + 1 from users other where other.points > u.points)
     )
     from users u
@@ -282,7 +350,9 @@ begin
         'bot_confirm_report(bigint, bigint, integer)',
         'bot_dispute_report(bigint, bigint)',
         'bot_set_name(bigint, text)',
-        'bot_me(bigint)'
+        'bot_me(bigint)',
+        'bot_search(text, integer)',
+        'bot_flag_gone(bigint, bigint)'
     ] loop
         execute format('revoke all on function %s from public, anon, authenticated', fn);
         execute format('grant execute on function %s to service_role', fn);

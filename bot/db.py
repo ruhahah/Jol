@@ -65,6 +65,36 @@ async def delete_state(key: str) -> None:
             raise RuntimeError(f"Supabase bot_state: HTTP {res.status}")
 
 
+# --- Чтение публичных представлений (те же, что читает сайт) ------------------------------
+
+async def _view(name: str, **params) -> list[dict]:
+    async with _session.get(_rest_url + name, params={"select": "*", **params}) as res:
+        if res.status >= 400:
+            raise RuntimeError(f"Supabase {name}: HTTP {res.status} {(await res.text())[:200]}")
+        return await res.json()
+
+
+async def summary() -> dict:
+    """Числа по городу: всего мест, сколько в каждом статусе, сколько проверено, сколько отчётов."""
+    return (await _view("places_summary_public"))[0]
+
+
+async def leaderboard(limit: int = 10) -> list[dict]:
+    return await _view("leaderboard_public", limit=str(limit))
+
+
+# --- Места ---------------------------------------------------------------------------------
+
+async def search(query: str) -> list[dict]:
+    """Места, в названии которых есть эта строка."""
+    return await _rpc("bot_search", p_query=query)
+
+
+async def flag_gone(user_id: int, place_id: int) -> dict | None:
+    """«Места больше нет». Возвращает {"name", "flags", "hidden"}; после второго сигнала место скрыто."""
+    return await _rpc("bot_flag_gone", p_user_id=user_id, p_place_id=place_id)
+
+
 # --- Пользователи ------------------------------------------------------------------------
 
 async def me(user_id: int) -> dict:
