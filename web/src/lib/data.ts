@@ -8,19 +8,51 @@ export const BOT_USERNAME = (import.meta.env.VITE_BOT_USERNAME as string | undef
 export const IS_DEMO = !(SUPABASE_URL && SUPABASE_KEY)
 export const SHYMKENT: [number, number] = [42.3265, 69.5965]
 
+/**
+ * Запрос к публичным представлениям Supabase (db/public_api.sql).
+ * Публичный ключ передаётся в адресе, а не в заголовках: запрос без своих заголовков
+ * браузер отправляет сразу, без предварительного CORS-запроса — это экономит один
+ * поход на сервер. Ключ и так виден всем в коде сайта, секретом он не является.
+ */
+async function api(view: string, query: string): Promise<Record<string, any>[]> {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${view}?${query}&apikey=${SUPABASE_KEY}`)
+  if (!res.ok) throw new Error(`Supabase ${res.status}`)
+  return res.json()
+}
+
+export interface Summary {
+  total: number
+  accessible: number
+  partial: number
+  inaccessible: number
+  unknown: number
+  verified: number
+  reports: number
+}
+
+/** Числа для главной страницы: одна строка вместо загрузки всего списка мест */
+export async function loadSummary(): Promise<Summary> {
+  if (!IS_DEMO) return (await api('places_summary_public', 'select=*'))[0] as Summary
+  const places = demoPlaces()
+  const count = (status: Place['status']) => places.filter((p) => p.status === status).length
+  return {
+    total: places.length,
+    accessible: count('accessible'),
+    partial: count('partial'),
+    inaccessible: count('inaccessible'),
+    unknown: count('unknown'),
+    verified: places.filter((p) => p.isVerified).length,
+    reports: places.reduce((sum, p) => sum + p.reportsCount, 0),
+  }
+}
+
 export async function loadPlaces(): Promise<Place[]> {
   if (IS_DEMO) return demoPlaces()
-  // Представление places_public создаётся в db/public_api.sql.
   // Supabase отдаёт не больше 1000 строк за запрос, поэтому читаем страницами.
   const PAGE = 1000
   const rows: Record<string, any>[] = []
   for (let offset = 0; ; offset += PAGE) {
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/places_public?select=*&order=id&limit=${PAGE}&offset=${offset}`,
-      { headers: { apikey: SUPABASE_KEY!, Authorization: `Bearer ${SUPABASE_KEY}` } },
-    )
-    if (!res.ok) throw new Error(`Supabase ${res.status}`)
-    const page: Record<string, any>[] = await res.json()
+    const page = await api('places_public', `select=*&order=id&limit=${PAGE}&offset=${offset}`)
     rows.push(...page)
     if (page.length < PAGE) break
   }
@@ -58,11 +90,7 @@ export interface Leader {
 /** Рейтинг волонтёров (представление leaderboard_public). В демо-режиме рейтинга нет. */
 export async function loadLeaders(): Promise<Leader[]> {
   if (IS_DEMO) return []
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/leaderboard_public?select=*`, {
-    headers: { apikey: SUPABASE_KEY!, Authorization: `Bearer ${SUPABASE_KEY}` },
-  })
-  if (!res.ok) throw new Error(`Supabase ${res.status}`)
-  const rows: Record<string, any>[] = await res.json()
+  const rows = await api('leaderboard_public', 'select=*')
   return rows.map((r) => ({ id: r.id, name: r.name, points: r.points, reportsCount: r.reports_count }))
 }
 

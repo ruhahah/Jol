@@ -55,6 +55,7 @@ export const en: Dict = {
     demoHint: 'These places are made up. Real ones will appear once volunteers start collecting them with the bot.',
     loadError: 'Could not load places. Check your connection and reload the page.',
     loading: 'Loading places…',
+    loadingPage: 'Loading the page…',
   },
   hero: {
     eyebrow: 'Shymkent · accessibility map',

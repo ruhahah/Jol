@@ -2,14 +2,13 @@ import {
   ArrowRight, BadgeCheck, Building2, CalendarCheck, Camera, HeartHandshake, Landmark, Send,
   Store, UserCheck, Accessibility, Map as MapIcon,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { PhoneDemo } from '../components/PhoneDemo'
 import { RampGraphic } from '../components/RampGraphic'
 import { StatusGlyph } from '../components/StatusGlyph'
-import { BOT_USERNAME, IS_DEMO } from '../lib/data'
-import { usePlaces } from '../lib/places'
+import { BOT_USERNAME, IS_DEMO, loadSummary, type Summary } from '../lib/data'
 import { usePrefs } from '../lib/prefs'
-import { STATUSES, type Status } from '../lib/types'
+import { STATUSES } from '../lib/types'
 import '../styles/landing.css'
 
 function BotButton({ ghost = false }: { ghost?: boolean }) {
@@ -23,38 +22,54 @@ function BotButton({ ghost = false }: { ghost?: boolean }) {
   )
 }
 
+/**
+ * Числа для блока «Карта сейчас». Главной не нужен весь список мест, поэтому берём одну
+ * строку сводки и запрашиваем её, когда браузер свободен, — чтобы не мешать первой отрисовке.
+ */
+function useSummary(): Summary | null {
+  const [summary, setSummary] = useState<Summary | null>(null)
+  useEffect(() => {
+    const load = () => loadSummary().then(setSummary).catch(() => {})
+    if ('requestIdleCallback' in window) {
+      const id = requestIdleCallback(load, { timeout: 2000 })
+      return () => cancelIdleCallback(id)
+    }
+    const id = setTimeout(load, 200)
+    return () => clearTimeout(id)
+  }, [])
+  return summary
+}
+
 function Stats() {
   const { t } = usePrefs()
-  const { places, loading, error } = usePlaces()
-  if (loading || error || !places.length) return null
-
-  const count = (s: Status) => places.filter((p) => p.status === s).length
-  const total = places.length
-  const tiles: [number, string][] = [
-    [total, t.stats.places],
-    [count('accessible'), t.stats.accessible],
-    [places.filter((p) => p.isVerified).length, t.stats.verified],
-    [places.reduce((sum, p) => sum + p.reportsCount, 0), t.stats.reports],
+  const summary = useSummary()
+  // Пока сводка не пришла, блок уже стоит на своём месте с прочерками — страница не прыгает
+  const value = (n: number | undefined) => (n === undefined ? '–' : n)
+  const tiles: [number | undefined, string][] = [
+    [summary?.total, t.stats.places],
+    [summary?.accessible, t.stats.accessible],
+    [summary?.verified, t.stats.verified],
+    [summary?.reports, t.stats.reports],
   ]
 
   return (
-    <section className="stats container" aria-labelledby="stats-title">
+    <section className="stats container" aria-labelledby="stats-title" aria-busy={!summary}>
       <div className="stats__head">
         <h2 id="stats-title">{t.stats.title}</h2>
         {IS_DEMO && <span className="demo-pill" title={t.ui.demoHint}>{t.ui.demo}</span>}
       </div>
       <dl className="stats__tiles">
-        {tiles.map(([value, label]) => (
+        {tiles.map(([n, label]) => (
           <div key={label} className="tile">
             <dt>{label}</dt>
-            <dd className="display">{value}</dd>
+            <dd className="display">{value(n)}</dd>
           </div>
         ))}
       </dl>
       <div className="split" role="img" aria-label={t.stats.barLabel}>
-        {STATUSES.map((s) => count(s) > 0 && (
-          <span key={s} className={`split__seg split__seg--${s}`} style={{ flexGrow: count(s) }}
-                title={`${t.status[s]}: ${count(s)}`} />
+        {summary && STATUSES.map((s) => summary[s] > 0 && (
+          <span key={s} className={`split__seg split__seg--${s}`} style={{ flexGrow: summary[s] }}
+                title={`${t.status[s]}: ${summary[s]}`} />
         ))}
       </div>
       <ul className="split__legend">
@@ -62,8 +77,8 @@ function Stats() {
           <li key={s}>
             <StatusGlyph status={s} size={20} />
             <span>{t.status[s]}</span>
-            <strong>{count(s)}</strong>
-            <small>{Math.round((count(s) / total) * 100)}%</small>
+            <strong>{value(summary?.[s])}</strong>
+            {summary && summary.total > 0 && <small>{Math.round((summary[s] / summary.total) * 100)}%</small>}
           </li>
         ))}
       </ul>
@@ -72,26 +87,57 @@ function Stats() {
   )
 }
 
-/** Пандус в тизере плавно «дышит» между пологим и крутым */
-function useSwingingSlope(): number {
+/**
+ * Пандус в тизере плавно «дышит» между пологим и крутым.
+ * Анимация живёт в собственном маленьком компоненте: раньше она обновляла состояние всей
+ * главной страницы 60 раз в секунду. Работает только пока блок виден на экране, а
+ * состояние меняется, лишь когда меняется показанная цифра (десятые доли процента).
+ */
+function TeaserRamp() {
+  const box = useRef<HTMLDivElement>(null)
   const [pct, setPct] = useState(7)
+
   useEffect(() => {
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) return
     let frame = 0
     const start = performance.now()
     const tick = (now: number) => {
-      setPct(8.5 + 5.5 * Math.sin((now - start) / 1900))
+      const next = Math.round((8.5 + 5.5 * Math.sin((now - start) / 1900)) * 10) / 10
+      setPct((current) => (current === next ? current : next))
       frame = requestAnimationFrame(tick)
     }
-    frame = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(frame)
+    const observer = new IntersectionObserver(([entry]) => {
+      cancelAnimationFrame(frame)
+      if (entry.isIntersecting) frame = requestAnimationFrame(tick)
+    })
+    observer.observe(box.current!)
+    return () => {
+      observer.disconnect()
+      cancelAnimationFrame(frame)
+    }
   }, [])
-  return pct
+
+  return (
+    <div className="teaser__visual" ref={box}>
+      <RampGraphic pct={pct} />
+      <p className="teaser__pct display" aria-hidden="true">{pct.toFixed(1)}%</p>
+    </div>
+  )
+}
+
+/** Пока человек читает главную, заранее подгружаем код карты — самый вероятный следующий шаг */
+function usePrefetchMap() {
+  useEffect(() => {
+    const connection = (navigator as { connection?: { saveData?: boolean; effectiveType?: string } }).connection
+    if (connection?.saveData || connection?.effectiveType?.includes('2g')) return
+    const id = setTimeout(() => void import('./MapPage'), 2500)
+    return () => clearTimeout(id)
+  }, [])
 }
 
 export function Landing() {
   const { t } = usePrefs()
-  const pct = useSwingingSlope()
+  usePrefetchMap()
 
   return (
     <>
@@ -164,10 +210,7 @@ export function Landing() {
               {t.teaser.cta} <ArrowRight size={18} />
             </a>
           </div>
-          <div className="teaser__visual">
-            <RampGraphic pct={pct} />
-            <p className="teaser__pct display" aria-hidden="true">{pct.toFixed(1)}%</p>
-          </div>
+          <TeaserRamp />
         </div>
       </section>
 

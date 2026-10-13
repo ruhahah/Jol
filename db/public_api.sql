@@ -36,6 +36,20 @@ left join lateral (
 -- а anon видит ровно те столбцы, что перечислены выше.
 grant select on places_public to anon;
 
+-- Сводка для главной страницы: одна строка с числами вместо загрузки всего списка мест.
+create or replace view places_summary_public as
+select
+    count(*)                                          as total,
+    count(*) filter (where status = 'accessible')     as accessible,
+    count(*) filter (where status = 'partial')        as partial,
+    count(*) filter (where status = 'inaccessible')   as inaccessible,
+    count(*) filter (where status = 'unknown')        as unknown,
+    count(*) filter (where is_verified)               as verified,
+    coalesce(sum(reports_count), 0)                   as reports
+from places;
+
+grant select on places_summary_public to anon;
+
 -- Рейтинг волонтёров для сайта: только придуманное имя, очки и число отчётов.
 -- Ни Telegram ID, ни Telegram-имя сюда не попадают. Требует db/bot_api.sql (столбец display_name).
 create or replace view leaderboard_public as

@@ -186,6 +186,13 @@ svg {
   margin-inline: auto;
 }
 
+/* Пока докачивается код страницы */
+.page-loading {
+  padding: 4rem 1rem;
+  color: var(--muted);
+  text-align: center;
+}
+
 /* --- Кнопки ---------------------------------------------------------------------- */
 .btn {
   display: inline-flex;
