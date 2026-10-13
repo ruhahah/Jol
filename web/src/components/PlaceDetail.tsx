@@ -1,14 +1,18 @@
 import {
-  ArrowLeft, BadgeCheck, BellRing, Camera, Check, CircleHelp, Clock, DoorOpen, ExternalLink, Link2,
-  Minus, QrCode, Send, Toilet, TriangleAlert, X,
+  ArrowLeft, BadgeCheck, Ban, BellRing, Camera, Check, CircleHelp, Clock, DoorOpen, ExternalLink, Lightbulb,
+  Link2, MessageSquare, Minus, QrCode, Send, Star, Toilet, TriangleAlert, X,
 } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
-import { BOT_USERNAME, IS_DEMO } from '../lib/data'
+import { useEffect, useState, type ReactNode } from 'react'
+import { advice } from '../lib/advice'
+import { BOT_USERNAME, IS_DEMO, loadHistory, type Check as CheckEntry } from '../lib/data'
+import { toggleFavorite, useFavorites } from '../lib/favorites'
 import { daysSince, STALE_DAYS } from '../lib/geo'
-import { usePrefs } from '../lib/prefs'
+import { usePrefs, type Lang } from '../lib/prefs'
 import type { Place } from '../lib/types'
 import type { Dict } from '../i18n/ru'
-import { StatusBadge } from './StatusGlyph'
+import { StatusBadge, StatusGlyph } from './StatusGlyph'
+
+const DATE_LOCALE: Record<Lang, string> = { ru: 'ru-RU', kk: 'kk-KZ', en: 'en-GB' }
 
 type Tone = 'good' | 'mid' | 'bad' | 'unknown'
 
@@ -80,8 +84,21 @@ function rows(t: Dict, place: Place): { icon: ReactNode; label: string; value: s
 }
 
 export function PlaceDetail({ place, distance }: { place: Place; distance: string | null }) {
-  const { t, profile } = usePrefs()
+  const { t, lang, profile } = usePrefs()
   const [copied, setCopied] = useState(false)
+  const [history, setHistory] = useState<CheckEntry[]>([])
+  const isFavorite = useFavorites().has(place.id)
+  const tips = advice(place, t)
+
+  useEffect(() => {
+    setHistory([])
+    if (!place.features) return // у входа никто не был — истории нет, запрос не нужен
+    let current = true
+    loadHistory(place.id).then((rows) => current && setHistory(rows)).catch(() => {})
+    return () => {
+      current = false
+    }
+  }, [place.id, place.features])
   const stale = place.lastCheckedAt !== null && daysSince(place.lastCheckedAt) > STALE_DAYS
 
   const copy = async () => {
@@ -104,7 +121,14 @@ export function PlaceDetail({ place, distance }: { place: Place; distance: strin
         {t.cat[place.category]}
         {distance && <> · {distance}</>}
       </p>
-      <h2 className="detail__name">{place.name}</h2>
+      <div className="detail__title">
+        <h2 className="detail__name">{place.name}</h2>
+        <button type="button" className={`icon-btn star${isFavorite ? ' is-on' : ''}`} aria-pressed={isFavorite}
+                aria-label={isFavorite ? t.fav.remove : t.fav.add} title={isFavorite ? t.fav.remove : t.fav.add}
+                onClick={() => toggleFavorite(place.id)}>
+          <Star size={22} fill={isFavorite ? 'currentColor' : 'none'} />
+        </button>
+      </div>
 
       <div className="detail__status">
         <StatusBadge status={place.status} large />
@@ -151,6 +175,45 @@ export function PlaceDetail({ place, distance }: { place: Place; distance: strin
         </p>
       )}
 
+      {place.comment && (
+        <section aria-labelledby="note-title">
+          <h3 id="note-title" className="detail__h">{t.place.note}</h3>
+          <p className="detail__note"><MessageSquare size={18} aria-hidden="true" /> {place.comment}</p>
+        </section>
+      )}
+
+      {history.length > 0 && (
+        <section aria-labelledby="history-title">
+          <h3 id="history-title" className="detail__h">{t.place.history}</h3>
+          <ol className="history">
+            {history.map((check, i) => (
+              <li key={i}>
+                <StatusGlyph status={check.status} size={18} />
+                <time dateTime={check.date}>
+                  {new Date(check.date).toLocaleDateString(DATE_LOCALE[lang], { day: 'numeric', month: 'long', year: 'numeric' })}
+                </time>
+                <span>
+                  {t.status[check.status]}
+                  {check.slopePct !== null && ` · ${t.place.slope(check.slopePct.toFixed(1))}`}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+
+      {place.features && (
+        <section aria-labelledby="advice-title" className="advice">
+          <h3 id="advice-title" className="detail__h"><Lightbulb size={15} aria-hidden="true" /> {t.advice.title}</h3>
+          {tips.length > 0 ? (
+            <ul>{tips.map((tip) => <li key={tip}>{tip}</li>)}</ul>
+          ) : (
+            <p>{t.advice.allGood}</p>
+          )}
+          <p className="advice__note">{t.advice.disclaimer}</p>
+        </section>
+      )}
+
       <section aria-labelledby="photos-title">
         <h3 id="photos-title" className="detail__h">{t.place.photos}</h3>
         <p className="photos-note"><Camera size={20} /> {t.place.photosNote}</p>
@@ -180,6 +243,13 @@ export function PlaceDetail({ place, distance }: { place: Place; distance: strin
         <a className="btn btn--primary detail__update" target="_blank" rel="noreferrer"
            href={`https://t.me/${BOT_USERNAME}?start=place_${place.id}`}>
           <Send size={18} /> {t.place.update}
+        </a>
+      )}
+
+      {BOT_USERNAME && (
+        <a className="detail__gone" target="_blank" rel="noreferrer"
+           href={`https://t.me/${BOT_USERNAME}?start=gone_${place.id}`}>
+          <Ban size={15} aria-hidden="true" /> {t.place.gone}
         </a>
       )}
 

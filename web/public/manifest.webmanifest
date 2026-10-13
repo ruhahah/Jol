@@ -1,0 +1,16 @@
+{
+  "name": "Jol — карта доступности Шымкента",
+  "short_name": "Jol",
+  "description": "Пандусы, ступеньки и двери в кафе, аптеках и поликлиниках, проверенные людьми у входа.",
+  "lang": "ru",
+  "start_url": "/#/map",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f1e8",
+  "theme_color": "#1f4fd8",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

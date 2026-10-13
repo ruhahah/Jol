@@ -7,6 +7,8 @@
     <meta name="theme-color" content="#F5F1E8" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0F1218" media="(prefers-color-scheme: dark)" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <title>Jol — карта доступности Шымкента</title>
     <script>
       // До первой отрисовки, чтобы тема не мигала
@@ -14,6 +16,7 @@
         var p = JSON.parse(localStorage.getItem('jol:prefs') || '{}')
         if (p.theme) document.documentElement.dataset.theme = p.theme
         if (p.largeText) document.documentElement.dataset.text = 'large'
+        if (p.contrast) document.documentElement.dataset.contrast = 'high'
       } catch (e) {}
     </script>
   </head>

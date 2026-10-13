@@ -92,6 +92,121 @@
   font-size: 118%;
 }
 
+/* --- Высокий контраст -------------------------------------------------------------
+   Для слабовидящих: чистые чёрный и белый, чёткие чёрные границы, более тёмные цвета
+   статусов. Блоки идут после обычных тем и поэтому их перекрывают. */
+:root[data-contrast='high'] {
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #ededed;
+  --ink: #000000;
+  --ink-2: #1a1a1a;
+  --muted: #3a3a3a;
+  --line: #000000;
+  --brand: #0a2fb8;
+  --brand-hover: #06207f;
+  --brand-ink: #ffffff;
+  --brand-soft: #dbe3ff;
+  --focus: #000000;
+  --st-accessible: #006b3c;
+  --st-partial: #e0a000;
+  --st-inaccessible: #a8001c;
+  --st-unknown: #555555;
+  --st-partial-ink: #000000;
+  --st-accessible-soft: #d9f2e4;
+  --st-partial-soft: #ffeeb8;
+  --st-inaccessible-soft: #ffd9dd;
+  --st-unknown-soft: #e6e6e6;
+  --shadow-1: 0 0 0 1px #000;
+  --shadow-2: 0 0 0 2px #000;
+  color-scheme: light;
+}
+
+:root[data-contrast='high'][data-theme='dark'] {
+  --bg: #000000;
+  --surface: #000000;
+  --surface-2: #1c1c1c;
+  --ink: #ffffff;
+  --ink-2: #f2f2f2;
+  --muted: #d6d6d6;
+  --line: #ffffff;
+  --brand: #a9bcff;
+  --brand-hover: #c6d2ff;
+  --brand-ink: #000000;
+  --brand-soft: #0d1a4d;
+  --focus: #ffffff;
+  --st-accessible: #5fe3a4;
+  --st-partial: #ffcc33;
+  --st-inaccessible: #ff8a7a;
+  --st-unknown: #bdbdbd;
+  --st-partial-ink: #000000;
+  --st-accessible-soft: #06301c;
+  --st-partial-soft: #3d2f00;
+  --st-inaccessible-soft: #47100a;
+  --st-unknown-soft: #262626;
+  --shadow-1: 0 0 0 1px #fff;
+  --shadow-2: 0 0 0 2px #fff;
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-contrast='high']:not([data-theme='light']) {
+    --bg: #000000;
+    --surface: #000000;
+    --surface-2: #1c1c1c;
+    --ink: #ffffff;
+    --ink-2: #f2f2f2;
+    --muted: #d6d6d6;
+    --line: #ffffff;
+    --brand: #a9bcff;
+    --brand-hover: #c6d2ff;
+    --brand-ink: #000000;
+    --brand-soft: #0d1a4d;
+    --focus: #ffffff;
+    --st-accessible: #5fe3a4;
+    --st-partial: #ffcc33;
+    --st-inaccessible: #ff8a7a;
+    --st-unknown: #bdbdbd;
+    --st-partial-ink: #000000;
+    --st-accessible-soft: #06301c;
+    --st-partial-soft: #3d2f00;
+    --st-inaccessible-soft: #47100a;
+    --st-unknown-soft: #262626;
+    --shadow-1: 0 0 0 1px #fff;
+    --shadow-2: 0 0 0 2px #fff;
+    color-scheme: dark;
+  }
+}
+
+/* В этом режиме шапка непрозрачная, ссылки подчёркнуты, знаки на тёмном фоне — с тёмным символом */
+:root[data-contrast='high'] .header {
+  background: var(--bg);
+  backdrop-filter: none;
+}
+
+:root[data-contrast='high'] .nav a,
+:root[data-contrast='high'] .link-btn,
+:root[data-contrast='high'] .detail__back {
+  text-decoration: underline;
+}
+
+:root[data-contrast='high'] .map--light .leaflet-tile-pane {
+  filter: contrast(1.2);
+}
+
+.offline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0.4rem 1rem;
+  background: var(--ink);
+  color: var(--bg);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
 /* --- База ------------------------------------------------------------------------ */
 *,
 *::before,

@@ -1,12 +1,13 @@
 import {
   Accessibility, Baby, BadgeCheck, BellRing, ChevronDown, ChevronUp, Coffee, Footprints, GraduationCap,
-  Landmark, LocateFixed, MapPin, Pill, Search, Send, ShoppingBag, Stethoscope, Toilet, X, type LucideIcon,
+  Landmark, LocateFixed, MapPin, Pill, Search, Send, ShoppingBag, Star, Stethoscope, Toilet, X, type LucideIcon,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { MapView, type MapBounds } from '../components/MapView'
 import { ago, PlaceDetail } from '../components/PlaceDetail'
 import { StatusGlyph } from '../components/StatusGlyph'
 import { BOT_USERNAME, IS_DEMO } from '../lib/data'
+import { useFavorites } from '../lib/favorites'
 import { distanceM } from '../lib/geo'
 import { usePlaces } from '../lib/places'
 import { usePrefs } from '../lib/prefs'
@@ -47,6 +48,8 @@ export function MapPage({ placeId }: { placeId: number | null }) {
   const [only, setOnly] = useState<Set<Status>>(new Set()) // пусто = показывать все статусы
   const [verifiedOnly, setVerifiedOnly] = useState(false)
   const [needs, setNeeds] = useState<Set<Need>>(new Set()) // что обязательно должно быть у входа
+  const [favOnly, setFavOnly] = useState(false)
+  const favorites = useFavorites()
   const [userPos, setUserPos] = useState<[number, number] | null>(null)
   const [locating, setLocating] = useState(false)
   const [locError, setLocError] = useState(false)
@@ -74,10 +77,11 @@ export function MapPage({ placeId }: { placeId: number | null }) {
       (p) =>
         (category === 'all' || p.category === category) &&
         (!verifiedOnly || p.isVerified) &&
+        (!favOnly || favorites.has(p.id)) &&
         [...needs].every((need) => p.features?.[need] === 'yes') &&
         (!q || p.name.toLowerCase().includes(q)),
     )
-  }, [places, query, category, verifiedOnly, needs])
+  }, [places, query, category, verifiedOnly, needs, favOnly, favorites])
 
   const counts = useMemo(() => {
     const result: Record<Status, number> = { accessible: 0, partial: 0, inaccessible: 0, unknown: 0 }
@@ -108,13 +112,14 @@ export function MapPage({ placeId }: { placeId: number | null }) {
     )
   }, [visible, bounds, userPos])
 
-  const filtered = query !== '' || category !== 'all' || only.size > 0 || verifiedOnly || needs.size > 0
+  const filtered = query !== '' || category !== 'all' || only.size > 0 || verifiedOnly || needs.size > 0 || favOnly
   const reset = () => {
     setQuery('')
     setCategory('all')
     setOnly(new Set())
     setVerifiedOnly(false)
     setNeeds(new Set())
+    setFavOnly(false)
   }
 
   const toggleNeed = (need: Need) => {
@@ -222,6 +227,9 @@ export function MapPage({ placeId }: { placeId: number | null }) {
                     <Icon size={16} /> {t.needs[need]}
                   </button>
                 ))}
+                <button type="button" className="chip" aria-pressed={favOnly} onClick={() => setFavOnly(!favOnly)}>
+                  <Star size={16} /> {t.fav.only}{favorites.size > 0 && ` · ${favorites.size}`}
+                </button>
               </div>
 
               <label className="switch">
@@ -274,6 +282,9 @@ export function MapPage({ placeId }: { placeId: number | null }) {
                           <span className="row__name">
                             {p.name}
                             {p.isVerified && <BadgeCheck size={16} className="row__tick" aria-label={t.place.checked} />}
+                            {favorites.has(p.id) && (
+                              <Star size={14} className="row__star" fill="currentColor" aria-label={t.fav.only} />
+                            )}
                           </span>
                           <span className="row__meta">
                             <Icon size={14} aria-hidden="true" />

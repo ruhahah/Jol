@@ -77,6 +77,24 @@ export async function loadPlaces(): Promise<Place[]> {
           rampSlopePct: r.ramp_slope_pct === null ? null : Number(r.ramp_slope_pct),
         }
       : null,
+    comment: r.comment ?? null,
+  }))
+}
+
+export interface Check {
+  date: string
+  status: Place['status']
+  slopePct: number | null
+}
+
+/** Последние проверки места: дата, оценка и измеренный уклон. Кто проверял — не отдаётся. */
+export async function loadHistory(placeId: number): Promise<Check[]> {
+  if (IS_DEMO) return []
+  const rows = await api('place_history_public', `select=*&place_id=eq.${placeId}&order=created_at.desc&limit=6`)
+  return rows.map((r) => ({
+    date: r.created_at,
+    status: r.status,
+    slopePct: r.ramp_slope_pct === null ? null : Number(r.ramp_slope_pct),
   }))
 }
 
@@ -159,7 +177,7 @@ function demoPlaces(): Place[] {
 
     if (rnd() < 0.2) {
       places.push({ ...base, status: 'unknown', score: null, reportsCount: 0, isVerified: false,
-                    lastCheckedAt: null, features: null })
+                    lastCheckedAt: null, features: null, comment: null })
       continue
     }
 
@@ -186,6 +204,7 @@ function demoPlaces(): Place[] {
       isVerified: reportsCount >= 2 && rnd() < 0.75,
       lastCheckedAt: new Date(Date.now() - Math.floor(1 + rnd() * rnd() * 420) * day).toISOString(),
       features,
+      comment: id % 6 === 0 ? 'Вход со двора, звонок справа от двери' : null,
     })
   }
   return places

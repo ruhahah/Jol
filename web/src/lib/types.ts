@@ -32,4 +32,6 @@ export interface Place {
   lastCheckedAt: string | null
   /** Ответы последнего отчёта; null, если у входа ещё никто не был */
   features: Features | null
+  /** Заметка волонтёра: «вход со двора» */
+  comment: string | null
 }

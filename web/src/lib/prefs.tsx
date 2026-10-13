@@ -15,6 +15,7 @@ interface Stored {
   lang?: Lang
   theme?: Theme
   largeText?: boolean
+  contrast?: boolean
   profile?: Profile
 }
 
@@ -43,6 +44,9 @@ interface Prefs {
   toggleTheme: () => void
   largeText: boolean
   toggleLargeText: () => void
+  /** Режим высокого контраста для слабовидящих */
+  contrast: boolean
+  toggleContrast: () => void
   /** Как человек передвигается — от этого зависят цвета знаков на карте */
   profile: Profile
   setProfile: (p: Profile) => void
@@ -64,6 +68,7 @@ export function PrefsProvider({ children }: { children: ReactNode }) {
   const lang = stored.lang ?? browserLang()
   const theme: Theme = stored.theme ?? (systemDark ? 'dark' : 'light')
   const largeText = !!stored.largeText
+  const contrast = !!stored.contrast
   const profile: Profile = PROFILES.includes(stored.profile!) ? stored.profile! : 'wheelchair'
 
   useEffect(() => {
@@ -73,13 +78,15 @@ export function PrefsProvider({ children }: { children: ReactNode }) {
     else delete root.dataset.theme
     if (largeText) root.dataset.text = 'large'
     else delete root.dataset.text
+    if (contrast) root.dataset.contrast = 'high'
+    else delete root.dataset.contrast
     document.title = DICTS[lang].meta.title
     try {
       localStorage.setItem(KEY, JSON.stringify(stored))
     } catch {
       /* приватный режим — живём без сохранения */
     }
-  }, [stored, lang, largeText])
+  }, [stored, lang, largeText, contrast])
 
   const value = useMemo<Prefs>(
     () => ({
@@ -90,10 +97,12 @@ export function PrefsProvider({ children }: { children: ReactNode }) {
       setLang: (l) => setStored((s) => ({ ...s, lang: l })),
       toggleTheme: () => setStored((s) => ({ ...s, theme: theme === 'dark' ? 'light' : 'dark' })),
       toggleLargeText: () => setStored((s) => ({ ...s, largeText: !s.largeText })),
+      contrast,
+      toggleContrast: () => setStored((s) => ({ ...s, contrast: !s.contrast })),
       profile,
       setProfile: (p) => setStored((s) => ({ ...s, profile: p })),
     }),
-    [lang, theme, largeText, profile],
+    [lang, theme, largeText, contrast, profile],
   )
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>

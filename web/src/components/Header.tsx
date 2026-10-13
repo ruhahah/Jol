@@ -1,4 +1,4 @@
-import { ALargeSmall, Menu, Moon, Sun, X } from 'lucide-react'
+import { ALargeSmall, Contrast, Menu, Moon, Sun, WifiOff, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { usePrefs, type Lang } from '../lib/prefs'
 
@@ -17,10 +17,22 @@ export function Logo() {
 }
 
 export function Header({ page }: { page: string }) {
-  const { t, lang, setLang, theme, toggleTheme, largeText, toggleLargeText } = usePrefs()
+  const { t, lang, setLang, theme, toggleTheme, largeText, toggleLargeText, contrast, toggleContrast } = usePrefs()
   const [open, setOpen] = useState(false)
+  const [offline, setOffline] = useState(!navigator.onLine)
 
   useEffect(() => setOpen(false), [page])
+
+  // Без сети сайт показывает то, что успел сохранить (см. public/sw.js) — честно говорим об этом
+  useEffect(() => {
+    const update = () => setOffline(!navigator.onLine)
+    window.addEventListener('online', update)
+    window.addEventListener('offline', update)
+    return () => {
+      window.removeEventListener('online', update)
+      window.removeEventListener('offline', update)
+    }
+  }, [])
 
   const links: [string, string][] = [
     ['', t.nav.home], ['map', t.nav.map], ['slope', t.nav.slope], ['stats', t.nav.stats],
@@ -44,6 +56,10 @@ export function Header({ page }: { page: string }) {
               title={t.ui.largeText} onClick={toggleLargeText}>
         <ALargeSmall size={22} />
       </button>
+      <button type="button" className="icon-btn" aria-pressed={contrast} aria-label={t.ui.contrast}
+              title={t.ui.contrast} onClick={toggleContrast}>
+        <Contrast size={20} />
+      </button>
       <button type="button" className="icon-btn" aria-label={t.ui.theme} title={t.ui.theme} onClick={toggleTheme}>
         {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
       </button>
@@ -64,6 +80,7 @@ export function Header({ page }: { page: string }) {
           {open ? <X size={22} /> : <Menu size={22} />}
         </button>
       </div>
+      {offline && <p className="offline" role="status"><WifiOff size={16} aria-hidden="true" /> {t.ui.offline}</p>}
       {open && (
         <div className="drawer">
           <nav className="nav" aria-label={t.ui.menu}>{nav}</nav>
