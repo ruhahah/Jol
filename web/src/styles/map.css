@@ -616,6 +616,30 @@
   color: var(--muted);
 }
 
+.extras {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.extras li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  background: var(--st-accessible-soft);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.extras svg {
+  color: var(--st-accessible);
+}
+
 .detail__empty {
   margin-top: 1.25rem;
   padding: 1rem;
@@ -743,18 +767,18 @@
   display: grid !important;
   place-items: center;
   border-radius: 50%;
-  filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.35));
   transition: transform 0.15s;
 }
 
-.pin .glyph .shape {
+/* Белая обводка отделяет знак от карты и от соседних знаков. Это обычный контур фигуры
+   (рисуется под заливкой), а не CSS-фильтры: шесть drop-shadow на каждом знаке заметно
+   тормозили перетаскивание карты на телефоне. */
+.pin .glyph--accessible .shape,
+.pin .glyph--partial .shape,
+.pin .glyph--inaccessible .shape {
+  stroke: #fff;
+  stroke-width: 3.5px;
   paint-order: stroke;
-}
-
-/* Белое кольцо отделяет знак от карты и от соседних знаков */
-.pin .glyph {
-  filter: drop-shadow(0 0 0 #fff) drop-shadow(1.5px 0 0 #fff) drop-shadow(-1.5px 0 0 #fff)
-    drop-shadow(0 1.5px 0 #fff) drop-shadow(0 -1.5px 0 #fff);
 }
 
 .pin:hover {

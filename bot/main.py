@@ -4,6 +4,7 @@ import json
 import logging
 import math
 import os
+from datetime import datetime, timezone
 
 from aiogram import BaseMiddleware, Bot, Dispatcher, F, Router
 from aiogram.filters import Command, CommandObject, CommandStart
@@ -24,7 +25,9 @@ from texts import CATEGORIES, CHOOSE_LANG, LANGS, t
 
 MAX_PHOTOS = 3
 WEBHOOK_PATH = "/webhook"
-COMMANDS = ("find", "add", "check", "search", "me", "top", "stats", "menu", "start", "cancel")
+COMMANDS = ("find", "add", "check", "search", "campaign", "me", "top", "stats", "menu", "start", "cancel")
+# Что ещё бывает у входа — необязательный шаг отчёта (значения совпадают с проверкой в bot_save_report)
+EXTRAS = ("parking", "elevator", "tactile")
 # Очки, с которых начинается каждый уровень (названия — level_0 … level_3 в texts.py)
 LEVELS = (0, 30, 100, 300)
 # Значки в профиле: ключ текста и условие по данным bot_me
@@ -58,11 +61,13 @@ class Flow(StatesGroup):
     photos = State()
     questions = State()
     slope = State()         # ждём замер уклона из мини-приложения или «Пропустить»
+    extras = State()        # необязательный шаг: парковка, лифт, тактильная плитка
     comment = State()       # последний шаг отчёта: необязательная заметка
     find = State()          # показаны результаты поиска, можно сузить категорию
     check = State()         # список мест, ждущих второго мнения
     search = State()        # поиск места по названию
     gone = State()          # ждём подтверждения «места больше нет»
+    new_campaign = State()  # администратор: ждём точку центра новой акции
 
 
 class UserMiddleware(BaseMiddleware):
@@ -73,7 +78,19 @@ class UserMiddleware(BaseMiddleware):
         if tg_user:
             row = await db.touch_user(tg_user.id, tg_user.username)
             data["user_id"], data["lang"] = row["id"], row["lang"]
+            # Заблокированный модератором пользователь ничего не может добавлять — отвечаем и выходим
+            if row.get("banned") and tg_user.id not in admin_ids():
+                if event.message:
+                    await event.message.answer(t(row["lang"], "banned"))
+                elif event.callback_query:
+                    await event.callback_query.answer(t(row["lang"], "banned"), show_alert=True)
+                return None
         return await handler(event, data)
+
+
+def admin_ids() -> set[int]:
+    """Telegram ID администраторов из переменной ADMIN_IDS (через запятую)."""
+    return {int(x) for x in os.getenv("ADMIN_IDS", "").replace(" ", "").split(",") if x.lstrip("-").isdigit()}
 
 
 def site_url() -> str:
@@ -92,7 +109,7 @@ def kb(buttons: list[tuple[str, str]], width: int = 1):
 
 
 def menu_kb(lang: str):
-    return kb([(t(lang, f"btn_{action}"), f"menu:{action}") for action in ("find", "add", "check", "me")])
+    return kb([(t(lang, f"btn_{action}"), f"menu:{action}") for action in ("find", "add", "check", "campaign", "me")])
 
 
 async def profile_text(lang: str, user_id: int) -> str:
@@ -131,7 +148,26 @@ def report_summary(lang: str, r: dict) -> str:
         if key == "ramp" and r.get("ramp_slope_pct") is not None:
             value += " · " + t(lang, "slope_value", pct=r["ramp_slope_pct"])
         lines.append(f"{t(lang, f'sum_{key}')}: {value}")
+    if r.get("extras"):
+        lines.append(f"{t(lang, 'sum_extras')}: " + ", ".join(t(lang, f"extra_{e}") for e in r["extras"]))
     return "\n".join(lines)
+
+
+async def campaigns_text(lang: str) -> str:
+    active = await db.campaigns()
+    if not active:
+        return t(lang, "campaign_none")
+    parts = []
+    for c in active:
+        filled = min(10, round(10 * c["done"] / c["goal"]))
+        until = c["ends_at"][:10]
+        parts.append(t(
+            lang, "campaign_line",
+            title=c["title"], bar="▓" * filled + "░" * (10 - filled), done=c["done"], goal=c["goal"],
+            until=f"{until[8:10]}.{until[5:7]}",
+            category=t(lang, f"cat_{c['category']}") if c["category"] else t(lang, "cat_all"),
+        ))
+    return t(lang, "campaign_title") + "\n\n" + "\n\n".join(parts) + "\n\n" + t(lang, "campaign_how")
 
 
 # --- /start, язык, меню ---------------------------------------------------------------
@@ -184,6 +220,8 @@ async def chose_menu(cb: CallbackQuery, state: FSMContext, lang: str, user_id: i
     await cb.answer()
     if purpose == "me":
         await cb.message.answer(await profile_text(lang, user_id))
+    elif purpose == "campaign":
+        await cb.message.answer(await campaigns_text(lang))
     elif purpose in ("find", "add", "check"):
         await ask_location(cb.message, state, lang, purpose)
 
@@ -224,6 +262,83 @@ async def cmd_top(message: Message, lang: str):
         for i, row in enumerate(leaders, start=1)
     ]
     await message.answer(t(lang, "top_title") + "\n\n" + "\n".join(lines))
+
+
+@router.message(Command("campaign"))
+async def cmd_campaign(message: Message, lang: str):
+    await message.answer(await campaigns_text(lang), reply_markup=menu_kb(lang))
+
+
+# --- Модерация: только для Telegram ID из ADMIN_IDS ------------------------------------
+# Для всех остальных эти команды ведут себя как неизвестные.
+
+def is_admin(event: Message | CallbackQuery) -> bool:
+    return event.from_user is not None and event.from_user.id in admin_ids()
+
+
+@router.message(Command("mod"), is_admin)
+async def cmd_mod(message: Message, lang: str):
+    recent = await db.admin_recent()
+    lines, buttons = [t(lang, "mod_title")], []
+    for n in recent["notes"]:
+        lines.append(f"📝 #{n['report_id']} «{n['place']}» (польз. {n['user_id']}): {n['comment']}")
+        buttons.append((f"🙈 Скрыть заметку #{n['report_id']}", f"mod:note:{n['report_id']}"))
+    for u in recent["names"]:
+        lines.append(f"👤 {u['user_id']}: {u['display_name']} · {u['points']}")
+        buttons.append((f"✖ Сбросить имя {u['user_id']}", f"mod:name:{u['user_id']}"))
+        buttons.append((f"⛔ Заблокировать {u['user_id']}", f"mod:ban:{u['user_id']}"))
+    if len(lines) == 1:
+        lines.append(t(lang, "mod_empty"))
+    await message.answer("\n".join(lines) + "\n\n" + t(lang, "mod_help"), reply_markup=kb(buttons) if buttons else None)
+
+
+@router.callback_query(F.data.startswith("mod:"), is_admin)
+async def mod_action(cb: CallbackQuery, lang: str):
+    _, kind, raw_id = cb.data.split(":")
+    action = {"note": db.admin_hide_note, "name": db.admin_reset_name, "ban": db.admin_ban}[kind]
+    done = await action(int(raw_id))
+    await cb.answer(t(lang, "mod_done" if done else "mod_not_found"), show_alert=not done)
+
+
+@router.message(Command("mod_place", "mod_unban", "mod_end"), is_admin)
+async def cmd_mod_simple(message: Message, lang: str, command: CommandObject):
+    if not (command.args or "").strip().isdigit():
+        return await message.answer(t(lang, "mod_help"))
+    target = int(command.args.strip())
+    action = {"mod_place": db.admin_unhide_place, "mod_unban": lambda uid: db.admin_ban(uid, False),
+              "mod_end": db.admin_end_campaign}[command.command]
+    await message.answer(t(lang, "mod_done" if await action(target) else "mod_not_found"))
+
+
+@router.message(Command("mod_campaign"), is_admin)
+async def cmd_mod_campaign(message: Message, state: FSMContext, lang: str, command: CommandObject):
+    """/mod_campaign 30 7 pharmacy Аптеки на Тауке хана — цель, дней, категория (или all), название."""
+    parts = (command.args or "").split(maxsplit=3)
+    if len(parts) < 4 or not parts[0].isdigit() or not parts[1].isdigit() or \
+            (parts[2] != "all" and parts[2] not in CATEGORIES):
+        return await message.answer(t(lang, "mod_campaign_help"))
+    await state.clear()
+    await state.set_state(Flow.new_campaign)
+    await state.update_data(goal=int(parts[0]), days=int(parts[1]),
+                            category=None if parts[2] == "all" else parts[2], title=parts[3])
+    await message.answer(
+        t(lang, "mod_campaign_where"),
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(text=t(lang, "btn_location"), request_location=True)]],
+            resize_keyboard=True, one_time_keyboard=True,
+        ),
+    )
+
+
+@router.message(Flow.new_campaign, F.location)
+async def got_campaign_center(message: Message, state: FSMContext, lang: str):
+    data = await state.get_data()
+    await state.clear()
+    campaign_id = await db.admin_create_campaign(
+        data["title"], data["category"], message.location.latitude, message.location.longitude,
+        data["goal"], data["days"],
+    )
+    await message.answer(t(lang, "mod_campaign_created", id=campaign_id), reply_markup=ReplyKeyboardRemove())
 
 
 @router.message(Command("stats"))
@@ -415,8 +530,13 @@ async def check_action(cb: CallbackQuery, state: FSMContext, lang: str, user_id:
 
     if action == "chk":  # карточка: что написал предыдущий человек
         await cb.answer()
+        question = t(lang, "check_question")
+        if place.get("stale") and place.get("last_checked_at"):  # давно проверенное место: всё ли по-прежнему?
+            checked = datetime.fromisoformat(place["last_checked_at"])
+            months = max(1, (datetime.now(timezone.utc) - checked).days // 30)
+            question = t(lang, "check_question_stale", months=months)
         await cb.message.edit_text(
-            f"{place['name']}\n{report_summary(lang, place)}\n\n{t(lang, 'check_question')}",
+            f"{place['name']}\n{report_summary(lang, place)}\n\n{question}",
             reply_markup=kb([(t(lang, "btn_confirm"), f"chkyes:{index}"),
                              (t(lang, "btn_fix"), f"chkno:{index}"),
                              (t(lang, "btn_gone"), f"chkgone:{index}"),
@@ -594,6 +714,12 @@ async def continue_report(message: Message, state: FSMContext, lang: str, user_i
         await ask_question(message, lang, key)
         return
 
+    if "extras" not in answers:  # необязательный шаг: что ещё есть у входа
+        await state.set_state(Flow.extras)
+        await state.update_data(extras_pick=[])
+        await message.answer(t(lang, "ask_extras"), reply_markup=extras_kb(lang, []))
+        return
+
     if "comment" not in answers:  # последний шаг — необязательная заметка
         await state.set_state(Flow.comment)
         await message.answer(t(lang, "ask_comment"),
@@ -611,6 +737,36 @@ async def continue_report(message: Message, state: FSMContext, lang: str, user_i
         t(lang, "thanks", status=t(lang, f"status_{status}"), points=db.POINTS_PER_REPORT),
         reply_markup=menu_kb(lang),
     )
+
+
+# --- Что ещё есть у входа: можно отметить несколько вариантов или ни одного ------------
+
+def extras_kb(lang: str, picked: list[str]):
+    buttons = [(("✅ " if e in picked else "▫️ ") + t(lang, f"extra_{e}"), f"ext:{e}") for e in EXTRAS]
+    return kb(buttons + [(t(lang, "btn_extras_done"), "ext:done")])
+
+
+@router.callback_query(Flow.extras, F.data.startswith("ext:"))
+async def extras_action(cb: CallbackQuery, state: FSMContext, lang: str, user_id: int):
+    value = cb.data.split(":")[1]
+    data = await state.get_data()
+    picked = data.get("extras_pick", [])
+    await cb.answer()
+    if value in EXTRAS:
+        picked = [e for e in picked if e != value] if value in picked else picked + [value]
+        await state.update_data(extras_pick=picked)
+        await cb.message.edit_reply_markup(reply_markup=extras_kb(lang, picked))
+        return
+    answers = data["answers"]
+    answers["extras"] = picked
+    await state.update_data(answers=answers)
+    await cb.message.edit_reply_markup()
+    await continue_report(cb.message, state, lang, user_id)
+
+
+@router.message(Flow.extras)
+async def need_extras(message: Message, lang: str):
+    await message.answer(t(lang, "use_buttons"))
 
 
 # --- Заметка к отчёту -------------------------------------------------------------------

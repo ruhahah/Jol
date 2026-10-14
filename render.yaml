@@ -21,3 +21,5 @@ services:
         sync: false
       - key: SUPABASE_SECRET_KEY
         sync: false
+      - key: ADMIN_IDS
+        sync: false

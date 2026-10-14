@@ -1,12 +1,12 @@
 import {
   ArrowRight, BadgeCheck, Building2, CalendarCheck, Camera, HeartHandshake, Landmark, Send,
-  Store, UserCheck, Accessibility, Map as MapIcon,
+  Store, Target, UserCheck, Accessibility, Map as MapIcon,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { PhoneDemo } from '../components/PhoneDemo'
 import { RampGraphic } from '../components/RampGraphic'
 import { StatusGlyph } from '../components/StatusGlyph'
-import { BOT_USERNAME, IS_DEMO, loadSummary, type Summary } from '../lib/data'
+import { BOT_USERNAME, IS_DEMO, loadCampaigns, loadSummary, type Campaign, type Summary } from '../lib/data'
 import { usePrefs } from '../lib/prefs'
 import { STATUSES } from '../lib/types'
 import '../styles/landing.css'
@@ -83,6 +83,43 @@ function Stats() {
         ))}
       </ul>
       {IS_DEMO && <p className="stats__note">{t.ui.demoHint}</p>}
+    </section>
+  )
+}
+
+/** Идущая акция для волонтёров с прогрессом. Если акций нет, блока нет. */
+function CampaignBanner() {
+  const { t, lang } = usePrefs()
+  const [campaign, setCampaign] = useState<Campaign | null>(null)
+
+  useEffect(() => {
+    const load = () => loadCampaigns().then((list) => setCampaign(list[0] ?? null)).catch(() => {})
+    const id = setTimeout(load, 300) // после первой отрисовки
+    return () => clearTimeout(id)
+  }, [])
+
+  if (!campaign) return null
+  const share = Math.min(100, Math.round((campaign.done / campaign.goal) * 100))
+  const until = new Date(campaign.endsAt).toLocaleDateString(lang === 'kk' ? 'kk-KZ' : lang === 'en' ? 'en-GB' : 'ru-RU',
+                                                              { day: 'numeric', month: 'long' })
+  return (
+    <section className="container">
+      <div className="campaign">
+        <p className="eyebrow"><Target size={16} aria-hidden="true" /> {t.campaign.eyebrow}</p>
+        <h2>{campaign.title}</h2>
+        <p className="campaign__meta">
+          {campaign.category ? t.cat[campaign.category] : t.campaign.any} · {t.campaign.until(until)}
+        </p>
+        <div className="campaign__bar" role="img" aria-label={t.campaign.progress(campaign.done, campaign.goal)}>
+          <span style={{ width: `${share}%` }} />
+        </div>
+        <p className="campaign__progress"><strong>{share}%</strong> · {t.campaign.progress(campaign.done, campaign.goal)}</p>
+        {BOT_USERNAME && (
+          <a className="btn btn--primary" href={`https://t.me/${BOT_USERNAME}`} target="_blank" rel="noreferrer">
+            <Send size={18} /> {t.campaign.cta}
+          </a>
+        )}
+      </div>
     </section>
   )
 }
@@ -167,6 +204,8 @@ export function Landing() {
       </section>
 
       <Stats />
+
+      <CampaignBanner />
 
       <section className="section container" aria-labelledby="signs-title">
         <h2 id="signs-title">{t.signs.title}</h2>

@@ -83,6 +83,44 @@ async def leaderboard(limit: int = 10) -> list[dict]:
     return await _view("leaderboard_public", limit=str(limit))
 
 
+async def campaigns() -> list[dict]:
+    """Идущие сейчас акции с прогрессом (представление campaigns_public)."""
+    now = datetime.now(timezone.utc).isoformat()
+    return await _view("campaigns_public", ends_at=f"gt.{now}", order="ends_at")
+
+
+# --- Модерация (только для администраторов) --------------------------------------------
+
+async def admin_recent() -> dict:
+    return await _rpc("bot_admin_recent", p_limit=8)
+
+
+async def admin_hide_note(report_id: int) -> bool:
+    return bool(await _rpc("bot_admin_hide_note", p_report_id=report_id))
+
+
+async def admin_reset_name(user_id: int) -> bool:
+    return bool(await _rpc("bot_admin_reset_name", p_user_id=user_id))
+
+
+async def admin_ban(user_id: int, ban: bool = True) -> bool:
+    return bool(await _rpc("bot_admin_ban", p_user_id=user_id, p_ban=ban))
+
+
+async def admin_unhide_place(place_id: int) -> bool:
+    return bool(await _rpc("bot_admin_unhide_place", p_place_id=place_id))
+
+
+async def admin_create_campaign(title: str, category: str | None, lat: float, lon: float,
+                                goal: int, days: int, radius_m: float = 1000) -> int:
+    return await _rpc("bot_admin_create_campaign", p_title=title, p_category=category, p_lat=lat, p_lon=lon,
+                      p_radius_m=radius_m, p_goal=goal, p_days=days)
+
+
+async def admin_end_campaign(campaign_id: int) -> bool:
+    return bool(await _rpc("bot_admin_end_campaign", p_id=campaign_id))
+
+
 # --- Места ---------------------------------------------------------------------------------
 
 async def search(query: str) -> list[dict]:

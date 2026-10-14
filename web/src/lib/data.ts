@@ -75,10 +75,31 @@ export async function loadPlaces(): Promise<Place[]> {
           callButton: r.call_button,
           toilet: r.toilet,
           rampSlopePct: r.ramp_slope_pct === null ? null : Number(r.ramp_slope_pct),
+          extras: r.extras ?? [],
         }
       : null,
     comment: r.comment ?? null,
   }))
+}
+
+export interface Campaign {
+  id: number
+  title: string
+  category: Place['category'] | null
+  goal: number
+  done: number
+  endsAt: string
+}
+
+/** Идущие сейчас акции для волонтёров (представление campaigns_public). В демо-режиме — пример. */
+export async function loadCampaigns(): Promise<Campaign[]> {
+  if (IS_DEMO) {
+    return [{ id: 1, title: 'Аптеки центра', category: 'pharmacy', goal: 30, done: 12,
+              endsAt: new Date(Date.now() + 5 * 86_400_000).toISOString() }]
+  }
+  const rows = await api('campaigns_public', `select=*&ends_at=gt.${new Date().toISOString()}&order=ends_at`)
+  return rows.map((r) => ({ id: r.id, title: r.title, category: r.category, goal: r.goal, done: r.done,
+                            endsAt: r.ends_at }))
 }
 
 export interface Check {
@@ -190,6 +211,7 @@ function demoPlaces(): Place[] {
       callButton: pick<Tri>([['yes', 25], ['no', 60], ['unknown', 15]]),
       toilet: pick<Tri>([['yes', 15], ['no', 50], ['unknown', 35]]),
       rampSlopePct: null,
+      extras: (['parking', 'elevator', 'tactile'] as const).filter(() => rnd() < 0.25),
     }
     if (ramp === 'good' && rnd() < 0.6) features.rampSlopePct = Math.round((4 + rnd() * 4) * 10) / 10
     if (ramp === 'bad' && rnd() < 0.6) features.rampSlopePct = Math.round((9 + rnd() * 8) * 10) / 10

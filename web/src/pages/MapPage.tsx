@@ -1,5 +1,5 @@
 import {
-  Accessibility, Baby, BadgeCheck, BellRing, ChevronDown, ChevronUp, Coffee, Footprints, GraduationCap,
+  Accessibility, ArrowUpDown, Baby, BadgeCheck, BellRing, SquareParking, ChevronDown, ChevronUp, Coffee, Footprints, GraduationCap,
   Landmark, LocateFixed, MapPin, Pill, Search, Send, ShoppingBag, Star, Stethoscope, Toilet, X, type LucideIcon,
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
@@ -32,8 +32,14 @@ const PROFILE_ICON: Record<Profile, LucideIcon> = {
   walker: Footprints,
 }
 
-type Need = 'toilet' | 'callButton'
-const NEEDS: [Need, LucideIcon][] = [['toilet', Toilet], ['callButton', BellRing]]
+type Need = 'toilet' | 'callButton' | 'parking' | 'elevator'
+const NEEDS: [Need, LucideIcon][] = [['toilet', Toilet], ['callButton', BellRing], ['parking', SquareParking],
+                                     ['elevator', ArrowUpDown]]
+
+function hasNeed(p: Place, need: Need): boolean {
+  if (!p.features) return false
+  return need === 'parking' || need === 'elevator' ? p.features.extras.includes(need) : p.features[need] === 'yes'
+}
 
 const STATUS_RANK: Record<Status, number> = { accessible: 0, partial: 1, inaccessible: 2, unknown: 3 }
 
@@ -78,7 +84,7 @@ export function MapPage({ placeId }: { placeId: number | null }) {
         (category === 'all' || p.category === category) &&
         (!verifiedOnly || p.isVerified) &&
         (!favOnly || favorites.has(p.id)) &&
-        [...needs].every((need) => p.features?.[need] === 'yes') &&
+        [...needs].every((need) => hasNeed(p, need)) &&
         (!q || p.name.toLowerCase().includes(q)),
     )
   }, [places, query, category, verifiedOnly, needs, favOnly, favorites])

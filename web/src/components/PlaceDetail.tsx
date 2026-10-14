@@ -168,6 +168,11 @@ export function PlaceDetail({ place, distance }: { place: Place; distance: strin
               </div>
             ))}
           </dl>
+          {place.features.extras.length > 0 && (
+            <ul className="extras" aria-label={t.place.extras}>
+              {place.features.extras.map((e) => <li key={e}><Check size={14} strokeWidth={3} /> {t.needs[e]}</li>)}
+            </ul>
+          )}
         </section>
       ) : (
         <p className="detail__empty">

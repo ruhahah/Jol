@@ -20,6 +20,33 @@ alter table place_flags enable row level security;
 revoke all on place_flags from anon, authenticated;
 grant all on place_flags to service_role;
 
+-- Модерация: заблокированный пользователь не может ничего добавлять, его заметки и имя
+-- не показываются; отдельную заметку можно скрыть, не трогая отчёт.
+alter table users   add column if not exists banned boolean not null default false;
+alter table reports add column if not exists comment_hidden boolean not null default false;
+
+-- Что ещё есть у входа (необязательный шаг отчёта): parking, elevator, tactile
+alter table reports add column if not exists extras text[] not null default '{}';
+
+-- Акции для волонтёров: «описать 30 аптек в этом районе до субботы».
+-- Район — прямоугольник по координатам; прогресс = сколько мест в нём получили отчёт за время акции.
+create table if not exists campaigns (
+    id         bigint generated always as identity primary key,
+    title      text not null,
+    category   place_category,                  -- null = любые места
+    south      float8 not null,
+    west       float8 not null,
+    north      float8 not null,
+    east       float8 not null,
+    goal       integer not null check (goal > 0),
+    starts_at  timestamptz not null default now(),
+    ends_at    timestamptz not null,
+    created_at timestamptz not null default now()
+);
+alter table campaigns enable row level security;
+revoke all on campaigns from anon, authenticated;
+grant all on campaigns to service_role;
+
 -- Пересчёт агрегатов места. Берём последний отчёт каждого пользователя за 12 месяцев
 -- (без «не знаю»). Статус места = самый частый; при равенстве — более строгий.
 -- «Проверено» = за этот статус высказались минимум 2 разных человека.
@@ -56,9 +83,9 @@ language sql set search_path = public, extensions as $$
     with u as (
         insert into users (tg_id, username) values (p_tg_id, p_username)
         on conflict (tg_id) do update set username = excluded.username
-        returning id, lang
+        returning id, lang, banned
     )
-    select jsonb_build_object('id', id, 'lang', lang) from u;
+    select jsonb_build_object('id', id, 'lang', lang, 'banned', banned) from u;
 $$;
 
 create or replace function bot_set_lang(p_user_id bigint, p_lang lang_code) returns void
@@ -95,7 +122,8 @@ declare
     v_flags integer;
     result  jsonb;
 begin
-    if not exists (select 1 from places where id = p_place_id) then
+    if not exists (select 1 from places where id = p_place_id)
+       or exists (select 1 from users where id = p_user_id and banned) then
         return null;
     end if;
     insert into place_flags (place_id, user_id) values (p_place_id, p_user_id)
@@ -147,6 +175,10 @@ declare
     v_report_id bigint;
     v_slope     numeric := (p_answers->>'ramp_slope_pct')::numeric;
 begin
+    if exists (select 1 from users where id = p_user_id and banned) then
+        raise exception 'user % is banned', p_user_id;
+    end if;
+
     if v_place_id is null then
         insert into places (name, category, geom, created_by)
         values (p_new_name, p_new_category,
@@ -155,13 +187,18 @@ begin
     end if;
 
     insert into reports (place_id, user_id, steps, ramp, door_wide, call_button, toilet,
-                         comment, ramp_slope_pct, status)
+                         extras, comment, ramp_slope_pct, status)
     values (v_place_id, p_user_id,
             coalesce(p_answers->>'steps', 'unknown')::steps_level,
             coalesce(p_answers->>'ramp', 'unknown')::ramp_state,
             coalesce(p_answers->>'door_wide', 'unknown')::tri_state,
             coalesce(p_answers->>'call_button', 'unknown')::tri_state,
             coalesce(p_answers->>'toilet', 'unknown')::tri_state,
+            -- только известные значения, без повторов
+            array(select distinct value
+                  from jsonb_array_elements_text(case when jsonb_typeof(p_answers->'extras') = 'array'
+                                                      then p_answers->'extras' else '[]' end)
+                  where value in ('parking', 'elevator', 'tactile') order by value),
             -- заметка волонтёра («вход со двора»); её видят все на сайте, поэтому не длиннее 200 символов
             nullif(left(btrim(regexp_replace(p_answers->>'comment', '\s+', ' ', 'g')), 200), ''),
             -- уклон, измеренный телефоном; зажимаем в допустимые рамки столбца.
@@ -206,16 +243,19 @@ language sql stable set search_path = public, extensions as $$
     ) nearest;
 $$;
 
--- Места рядом, которые ждут второго мнения: есть отчёт, но ещё не «проверено», и этот
--- пользователь сам о месте не писал. Вместе с ответами последнего отчёта.
+-- Места рядом, которые ждут второго мнения: есть отчёт, но ещё не «проверено» — или
+-- проверено, но больше полугода назад (пандус могли сломать или построить). Этот
+-- пользователь сам о месте за последние полгода не писал. Вместе с ответами последнего отчёта.
 create or replace function bot_places_to_verify(
     p_user_id bigint, p_lat float8, p_lon float8, p_radius float8 default 500
 ) returns jsonb
 language sql stable set search_path = public, extensions as $$
-    select coalesce(jsonb_agg(to_jsonb(waiting) order by dist_m), '[]'::jsonb)
+    select coalesce(jsonb_agg(to_jsonb(waiting) order by stale, dist_m), '[]'::jsonb)
     from (
         select p.id, p.name, p.category, p.status, r.id as report_id,
-               r.steps, r.ramp, r.door_wide, r.call_button, r.toilet, r.ramp_slope_pct,
+               r.steps, r.ramp, r.door_wide, r.call_button, r.toilet, r.ramp_slope_pct, r.extras,
+               p.last_checked_at,
+               (p.is_verified and p.last_checked_at < now() - interval '6 months') as stale,
                round(st_distance(p.geom, pt.g))::int as dist_m
         from places p
         cross join (select st_setsrid(st_makepoint(p_lon, p_lat), 4326)::geography as g) pt
@@ -225,10 +265,12 @@ language sql stable set search_path = public, extensions as $$
             order by created_at desc
             limit 1
         ) r on true
-        where not p.is_verified
+        where (not p.is_verified or p.last_checked_at < now() - interval '6 months')
           and not p.hidden
           and st_dwithin(p.geom, pt.g, p_radius)
-          and not exists (select 1 from reports where place_id = p.id and user_id = p_user_id)
+          and not exists (select 1 from reports
+                          where place_id = p.id and user_id = p_user_id
+                            and created_at > now() - interval '6 months')
         order by dist_m
         limit 8
     ) waiting;
@@ -246,7 +288,8 @@ declare
     result jsonb;
 begin
     select * into r from reports where id = p_report_id;
-    if not found or r.user_id = p_user_id then
+    if not found or r.user_id = p_user_id
+       or exists (select 1 from users where id = p_user_id and banned) then
         return null;
     end if;
 
@@ -258,9 +301,9 @@ begin
     end if;
 
     insert into reports (place_id, user_id, steps, ramp, door_wide, call_button, toilet,
-                         ramp_slope_pct, status)
+                         extras, ramp_slope_pct, status)
     values (r.place_id, p_user_id, r.steps, r.ramp, r.door_wide, r.call_button, r.toilet,
-            r.ramp_slope_pct, r.status);
+            r.extras, r.ramp_slope_pct, r.status);
     perform recalc_place(r.place_id);
     update users set points = points + p_points where id = p_user_id;
 
@@ -292,7 +335,7 @@ create or replace function bot_set_name(p_user_id bigint, p_name text) returns v
 language sql set search_path = public, extensions as $$
     update users
     set display_name = nullif(left(btrim(regexp_replace(p_name, '\s+', ' ', 'g')), 24), '')
-    where id = p_user_id;
+    where id = p_user_id and not banned;
 $$;
 
 -- Профиль для команды /me. Подтверждение создаёт копию отчёта, поэтому собственные
@@ -333,6 +376,89 @@ alter table bot_state enable row level security;
 revoke all on bot_state from anon, authenticated;
 grant all on bot_state to service_role;
 
+-- --- Модерация (команды бота только для администраторов из ADMIN_IDS) -------------------
+
+-- Последние заметки и имена в рейтинге — то, что видно всем и что стоит просматривать
+create or replace function bot_admin_recent(p_limit integer default 10) returns jsonb
+language sql stable set search_path = public, extensions as $$
+    select jsonb_build_object(
+        'notes', coalesce((
+            select jsonb_agg(to_jsonb(n) order by n.created_at desc) from (
+                select r.id as report_id, r.comment, r.created_at, r.user_id, p.id as place_id, p.name as place
+                from reports r join places p on p.id = r.place_id
+                where r.comment is not null and not r.comment_hidden
+                order by r.created_at desc limit p_limit
+            ) n), '[]'::jsonb),
+        'names', coalesce((
+            select jsonb_agg(to_jsonb(u) order by u.user_id desc) from (
+                select id as user_id, display_name, points from users
+                where display_name is not null and not banned
+                order by id desc limit p_limit
+            ) u), '[]'::jsonb)
+    );
+$$;
+
+create or replace function bot_admin_hide_note(p_report_id bigint) returns boolean
+language sql set search_path = public, extensions as $$
+    update reports set comment_hidden = true where id = p_report_id and comment is not null
+    returning true;
+$$;
+
+create or replace function bot_admin_reset_name(p_user_id bigint) returns boolean
+language sql set search_path = public, extensions as $$
+    update users set display_name = null where id = p_user_id returning true;
+$$;
+
+-- Блокировка: имя сбрасывается, заметки скрываются. Отчёты остаются — их можно оспорить обычным путём.
+create or replace function bot_admin_ban(p_user_id bigint, p_ban boolean default true) returns boolean
+language plpgsql set search_path = public, extensions as $$
+begin
+    update users set banned = p_ban, display_name = case when p_ban then null else display_name end
+    where id = p_user_id;
+    if not found then
+        return false;
+    end if;
+    if p_ban then
+        update reports set comment_hidden = true where user_id = p_user_id and comment is not null;
+    end if;
+    return true;
+end
+$$;
+
+-- Вернуть на карту место, скрытое по ошибке («места больше нет»)
+create or replace function bot_admin_unhide_place(p_place_id bigint) returns boolean
+language plpgsql set search_path = public, extensions as $$
+begin
+    update places set hidden = false where id = p_place_id;
+    if not found then
+        return false;
+    end if;
+    delete from place_flags where place_id = p_place_id;
+    return true;
+end
+$$;
+
+-- --- Акции -----------------------------------------------------------------------------
+
+create or replace function bot_admin_create_campaign(
+    p_title text, p_category place_category, p_lat float8, p_lon float8,
+    p_radius_m float8, p_goal integer, p_days integer
+) returns bigint
+language sql set search_path = public, extensions as $$
+    -- прямоугольник примерно p_radius_m в каждую сторону от точки
+    insert into campaigns (title, category, south, west, north, east, goal, ends_at)
+    values (left(btrim(p_title), 80), p_category,
+            p_lat - p_radius_m / 111320.0, p_lon - p_radius_m / (111320.0 * cos(radians(p_lat))),
+            p_lat + p_radius_m / 111320.0, p_lon + p_radius_m / (111320.0 * cos(radians(p_lat))),
+            p_goal, now() + make_interval(days => p_days))
+    returning id;
+$$;
+
+create or replace function bot_admin_end_campaign(p_id bigint) returns boolean
+language sql set search_path = public, extensions as $$
+    update campaigns set ends_at = now() where id = p_id and ends_at > now() returning true;
+$$;
+
 -- По умолчанию функции в схеме public может вызвать кто угодно, включая anon. Закрываем.
 do $$
 declare
@@ -352,7 +478,14 @@ begin
         'bot_set_name(bigint, text)',
         'bot_me(bigint)',
         'bot_search(text, integer)',
-        'bot_flag_gone(bigint, bigint)'
+        'bot_flag_gone(bigint, bigint)',
+        'bot_admin_recent(integer)',
+        'bot_admin_hide_note(bigint)',
+        'bot_admin_reset_name(bigint)',
+        'bot_admin_ban(bigint, boolean)',
+        'bot_admin_unhide_place(bigint)',
+        'bot_admin_create_campaign(text, place_category, float8, float8, float8, integer, integer)',
+        'bot_admin_end_campaign(bigint)'
     ] loop
         execute format('revoke all on function %s from public, anon, authenticated', fn);
         execute format('grant execute on function %s to service_role', fn);

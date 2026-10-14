@@ -17,7 +17,12 @@ export interface Features {
   callButton: Tri
   toilet: Tri
   rampSlopePct: number | null
+  /** Что ещё есть у входа (необязательный шаг отчёта) */
+  extras: Extra[]
 }
+
+export const EXTRAS = ['parking', 'elevator', 'tactile'] as const
+export type Extra = (typeof EXTRAS)[number]
 
 export interface Place {
   id: number
